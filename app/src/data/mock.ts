@@ -98,6 +98,17 @@ export const SEED_CHAT: ChatMessage[] = [
 export const DEMO_RECOGNIZED = ['ME', 'NEED', 'METFORMIN', 'ONE', 'STRIP'];
 export const DEMO_DRAFT = 'I need one strip of Metformin, please';
 
+/**
+ * Talk Aloud shows candidate full sentences for the same recognized gloss sequence — the LLM's
+ * phrasing options for `DEMO_RECOGNIZED` — rather than a single draft, since here there is no
+ * call partner to confirm the sentence with before it is spoken.
+ */
+export const DEMO_SENTENCE_OPTIONS = [
+  'I need one strip of Metformin, please',
+  'Could I get one strip of Metformin?',
+  'One strip of Metformin, please — that is all I need',
+];
+
 export interface Contact {
   id: string;
   name: string;

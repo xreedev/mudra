@@ -6,11 +6,11 @@ import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
- * The home screen: a wordmark, four tiles, and a privacy line.
+ * The home screen: a wordmark, five tiles, and a privacy line.
  *
- * No tab bar, no carousel, no dashboard. Four destinations laid out as a 2x2 grid of large
- * targets is the fastest thing to hit correctly — which matters when the reason you opened the
- * app is an emergency.
+ * No tab bar, no carousel, no dashboard. Destinations laid out as a grid of large targets is the
+ * fastest thing to hit correctly — which matters when the reason you opened the app is an
+ * emergency.
  */
 export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const theme = useTheme();
@@ -69,6 +69,14 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             description="Help phrasing what to say"
             icon="chat"
             onPress={() => navigation.navigate('Chat')}
+          />
+        </View>
+        <View style={[styles.row, { gap: theme.spacing.md }]}>
+          <Tile
+            title="Talk Aloud"
+            description="Sign a sentence, hear it spoken"
+            icon="volume"
+            onPress={() => navigation.navigate('TalkAloud')}
           />
         </View>
       </View>

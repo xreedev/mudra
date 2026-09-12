@@ -18,9 +18,9 @@ export interface TileProps {
 /**
  * A home-screen destination.
  *
- * Tiles are tall, high-contrast and only four in number: someone who needs to place an emergency
- * call should be able to hit the right one without reading carefully. The featured tile is
- * visually louder for the same reason.
+ * Tiles are tall, high-contrast and few in number: someone who needs to place an emergency call
+ * should be able to hit the right one without reading carefully. The featured tile is visually
+ * louder for the same reason.
  */
 export function Tile({ title, description, icon, onPress, featured = false, meta }: TileProps) {
   const theme = useTheme();
