@@ -7,13 +7,19 @@ import {
   type CameraStageHandle,
   GlossBubbles,
   HandSkeleton,
+  Icon,
   IconButton,
   Screen,
   SignGuideCircle,
   Text,
 } from '../components';
 import { DEMO_DRAFT } from '../data/mock';
-import { getRememberedSentence, rememberSentenceChoice, withRememberedSentence } from '../llm';
+import {
+  getRememberedSentence,
+  isSameSentence,
+  rememberSentenceChoice,
+  withRememberedSentence,
+} from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
@@ -49,6 +55,10 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   // any) leads, then up to 2 fresh LLM readings — same ambiguity the call screen resolves by
   // letting the person pick — here, picking one also speaks it.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
+  // The remembered pick for the current sign sequence, if any — kept
+  // separately so the UI can tag whichever displayed sentence matches it
+  // as "From memory".
+  const [rememberedSentence, setRememberedSentence] = useState<string | undefined>(undefined);
   const [recognized, setRecognized] = useState<string[]>([]);
   const [spoken, setSpoken] = useState<string | null>(null);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
@@ -93,6 +103,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     lastAppendedLabel.current = null;
     setRecognized([]);
     setDraftOptions([]);
+    setRememberedSentence(undefined);
     setDraft(DEMO_DRAFT);
   }, []);
 
@@ -123,6 +134,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
         // EXACT sign sequence before? If so it always leads the list.
         const remembered = await getRememberedSentence(updated).catch(() => undefined);
         if (composeRequestId.current !== requestId) return;
+        setRememberedSentence(remembered);
 
         if (llm.status === 'ready') {
           try {
@@ -279,6 +291,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               {[draft, ...draftOptions.filter((option) => option !== draft)].map((sentence, index) => {
                 if (!sentence.trim()) return null;
                 const speaking = speakingState === 'speaking' && spoken === sentence;
+                const fromMemory = isSameSentence(sentence, rememberedSentence);
                 return (
                   <Pressable
                     key={`${sentence}-${index}`}
@@ -298,13 +311,28 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                       },
                     ]}
                   >
-                    <Text
-                      variant={index === 0 ? 'heading' : 'body'}
-                      style={[styles.optionText, speaking ? undefined : styles.onDark]}
-                      tone={speaking ? 'accent' : undefined}
-                    >
-                      {sentence}
-                    </Text>
+                    <View style={styles.optionTextCol}>
+                      <Text
+                        variant={index === 0 ? 'heading' : 'body'}
+                        style={speaking ? undefined : styles.onDark}
+                        tone={speaking ? 'accent' : undefined}
+                      >
+                        {sentence}
+                      </Text>
+                      {fromMemory ? (
+                        <View
+                          style={[
+                            styles.memoryTagRow,
+                            { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs / 2 },
+                          ]}
+                        >
+                          <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                          <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                            From memory
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <IconButton
                       name={speaking ? 'stop' : 'volume'}
                       accessibilityLabel={speaking ? 'Stop' : 'Speak this sentence'}
@@ -419,7 +447,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  optionText: { flex: 1 },
+  optionTextCol: { flex: 1 },
+  memoryTagRow: { flexDirection: 'row', alignItems: 'center' },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',

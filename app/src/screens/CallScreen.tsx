@@ -14,7 +14,12 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
-import { getRememberedSentence, rememberSentenceChoice, withRememberedSentence } from '../llm';
+import {
+  getRememberedSentence,
+  isSameSentence,
+  rememberSentenceChoice,
+  withRememberedSentence,
+} from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
@@ -57,6 +62,11 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // is remembered and the LLM isn't ready); tapping an option in the UI
   // below just changes which one `draft` points at.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
+  // The remembered pick for the current sign sequence, if any — kept
+  // separately (rather than re-derived from draftOptions[0]) purely so the
+  // UI can tag whichever option matches it as "From memory", including
+  // after the user has switched to a different option.
+  const [rememberedSentence, setRememberedSentence] = useState<string | undefined>(undefined);
   const [recognized, setRecognized] = useState<string[]>([]);
   // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
   // to-edge) screen, so the window size is the skeleton's coordinate space
@@ -91,6 +101,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     lastAppendedLabel.current = null;
     setRecognized([]);
     setDraftOptions([]);
+    setRememberedSentence(undefined);
     setDraft(DEMO_DRAFT);
   }, []);
 
@@ -128,6 +139,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
         // EXACT sign sequence before? If so it always leads the list.
         const remembered = await getRememberedSentence(updated).catch(() => undefined);
         if (composeRequestId.current !== requestId) return;
+        setRememberedSentence(remembered);
 
         if (llm.status === 'ready') {
           // Compose over the WHOLE sequence so far, not just the new word —
@@ -326,6 +338,19 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
                 {draft}
               </Text>
+              {isSameSentence(draft, rememberedSentence) && draftOptions.length <= 1 ? (
+                <View
+                  style={[
+                    styles.memoryTagRow,
+                    { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs },
+                  ]}
+                >
+                  <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                  <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                    From memory
+                  </Text>
+                </View>
+              ) : null}
 
               {draftOptions.length > 1 ? (
                 // The glosses alone can't say whether the signer is the
@@ -341,6 +366,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   </Text>
                   {draftOptions.map((option, index) => {
                     const selected = option === draft;
+                    const fromMemory = isSameSentence(option, rememberedSentence);
                     return (
                       <Pressable
                         key={`${option}-${index}`}
@@ -367,13 +393,28 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                         ) : (
                           <View style={styles.optionCheckSpacer} />
                         )}
-                        <Text
-                          variant="body"
-                          style={[styles.optionText, selected ? undefined : styles.onDark]}
-                          tone={selected ? 'accent' : undefined}
-                        >
-                          {option}
-                        </Text>
+                        <View style={styles.optionTextCol}>
+                          <Text
+                            variant="body"
+                            style={selected ? undefined : styles.onDark}
+                            tone={selected ? 'accent' : undefined}
+                          >
+                            {option}
+                          </Text>
+                          {fromMemory ? (
+                            <View
+                              style={[
+                                styles.memoryTagRow,
+                                { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs / 2 },
+                              ]}
+                            >
+                              <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                              <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                                From memory
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
                       </Pressable>
                     );
                   })}
@@ -603,7 +644,8 @@ const styles = StyleSheet.create({
   textAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
   optionRow: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth * 2 },
   optionCheckSpacer: { width: 16 },
-  optionText: { flex: 1 },
+  optionTextCol: { flex: 1 },
+  memoryTagRow: { flexDirection: 'row', alignItems: 'center' },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',

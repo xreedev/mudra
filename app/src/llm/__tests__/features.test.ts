@@ -3,6 +3,7 @@ import {
   buildRecentContext,
   glossToText,
   glossToTextOptions,
+  isSameSentence,
   parseReplies,
   smartReplies,
   withRememberedSentence,
@@ -50,6 +51,25 @@ describe('glossToTextOptions', () => {
     const llm = fakeLlm('["Where is your home?"]["Which way to your home?"]');
     const options = await glossToTextOptions(llm, ['WHERE', 'HOME']);
     expect(options).toEqual(['Where is your home?', 'Which way to your home?']);
+  });
+});
+
+describe('isSameSentence', () => {
+  it('matches identical text', () => {
+    expect(isSameSentence('Where is your home?', 'Where is your home?')).toBe(true);
+  });
+
+  it('matches case- and whitespace-insensitively', () => {
+    expect(isSameSentence('  where is your home?  ', 'WHERE IS YOUR HOME?')).toBe(true);
+  });
+
+  it('does not match different text', () => {
+    expect(isSameSentence('Where is your home?', 'Where am I delivering to?')).toBe(false);
+  });
+
+  it('is false when either side is undefined', () => {
+    expect(isSameSentence(undefined, 'Where is your home?')).toBe(false);
+    expect(isSameSentence('Where is your home?', undefined)).toBe(false);
   });
 });
 

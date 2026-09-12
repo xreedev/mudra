@@ -56,6 +56,15 @@ export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Pro
   return parseReplies(raw, 2);
 }
 
+/** Word-for-word equal, ignoring surrounding whitespace and case — the same
+ *  tolerant match `withRememberedSentence` dedupes with, exported so a UI
+ *  can also ask "is this displayed option the remembered one?" (e.g. to
+ *  show a "from memory" tag) without duplicating the comparison. */
+export function isSameSentence(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 /**
  * Combines a remembered sentence (the user's past pick for this exact sign
  * sequence, see sentenceMemory.ts) with fresh LLM candidates: the remembered
@@ -67,9 +76,7 @@ export function withRememberedSentence(
   llmOptions: readonly string[],
 ): string[] {
   if (!remembered) return [...llmOptions];
-  const normalize = (s: string) => s.trim().toLowerCase();
-  const rememberedNorm = normalize(remembered);
-  const rest = llmOptions.filter((option) => normalize(option) !== rememberedNorm);
+  const rest = llmOptions.filter((option) => !isSameSentence(option, remembered));
   return [remembered, ...rest];
 }
 
