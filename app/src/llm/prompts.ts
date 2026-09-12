@@ -87,7 +87,7 @@ export function buildGlossUserPrompt(gloss: string[]): string {
 }
 
 /**
- * gloss tokens → 3 DIFFERENT candidate sentences, for when the glosses are
+ * gloss tokens → 2 or 3 DIFFERENT candidate sentences, for when the glosses are
  * genuinely ambiguous about WHO is signing. "ARRIVED HOME RIGHT LEFT" reads
  * one way if the signer is the customer asking the driver ("Have you
  * arrived home, right or left?") and a completely different way if the

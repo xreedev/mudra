@@ -14,6 +14,7 @@ import {
   buildGlossUserPrompt,
   buildSmartRepliesUserPrompt,
 } from './prompts';
+import { MAX_CANDIDATES_PER_SEQUENCE } from './sentenceMemory';
 
 /** Fold the few-shot pairs into the system prompt (keeps complete() generic). */
 export function glossSystemWithFewShot(): string {
@@ -23,7 +24,7 @@ export function glossSystemWithFewShot(): string {
   return `${GLOSS_TO_TEXT_SYSTEM}\n\nExamples:\n${shots}`;
 }
 
-/** Same folding, for the 3-candidate-options prompt. */
+/** Same folding, for the 2-candidate-options prompt. */
 export function glossOptionsSystemWithFewShot(): string {
   const shots = GLOSS_TO_TEXT_OPTIONS_FEWSHOT.map(
     (s) => `Glosses: ${s.gloss}\n${JSON.stringify(s.options)}`,
@@ -40,12 +41,14 @@ export async function glossToText(llm: LlmProvider, gloss: string[]): Promise<st
 }
 
 /**
- * ["ARRIVED","HOME","RIGHT","LEFT"] -> 3 different candidate sentences,
+ * ["ARRIVED","HOME","RIGHT","LEFT"] -> 2 or 3 different candidate sentences,
  * covering different plausible readings of who is signing (the customer or
  * the driver) — see GLOSS_TO_TEXT_OPTIONS_SYSTEM for why a single guess
- * isn't good enough here. Higher temperature than glossToText (0.2 -> 0.6)
- * specifically to encourage the 3 options to genuinely diverge rather than
- * be near-identical rewordings; falls back to parseReplies' same tolerant
+ * isn't good enough here, and for why the LLM decides 2 vs 3 itself rather
+ * than being forced to a fixed count (a padded, invented 3rd option is worse
+ * than 2 solid ones). Higher temperature than glossToText (0.2 -> 0.6)
+ * specifically to encourage the options to genuinely diverge rather than be
+ * near-identical rewordings; falls back to parseReplies' same tolerant
  * JSON-array recovery already proven on-device for smartReplies.
  */
 export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Promise<string[]> {
@@ -54,6 +57,41 @@ export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Pro
     temperature: 0.6,
   });
   return parseReplies(raw);
+}
+
+/** Word-for-word equal, ignoring surrounding whitespace and case — the same
+ *  tolerant match `withRememberedSentences` dedupes with, exported so a UI
+ *  can also ask "is this displayed option a remembered one?" (e.g. to show
+ *  a "from memory" tag) without duplicating the comparison. */
+export function isSameSentence(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Combines the sentences remembered for this exact sign sequence (see
+ * sentenceMemory.ts) with fresh LLM candidates, memory-first, up to
+ * `MAX_CANDIDATES_PER_SEQUENCE` total: every remembered sentence leads (most-
+ * recently-picked first), then LLM options fill whatever slots are left —
+ * skipping any LLM option that's word-for-word the same (trimmed, case-
+ * insensitive) as one already remembered, so it's never shown twice. When
+ * memory alone already fills every slot, `llmOptions` should be `[]` —
+ * callers skip the LLM call entirely in that case (see CallScreen /
+ * TalkAloudScreen's composeForSequence), since none of it could ever be
+ * shown anyway.
+ */
+export function withRememberedSentences(
+  remembered: readonly string[],
+  llmOptions: readonly string[],
+): string[] {
+  const memoryFirst = remembered.slice(0, MAX_CANDIDATES_PER_SEQUENCE);
+  const remainingSlots = MAX_CANDIDATES_PER_SEQUENCE - memoryFirst.length;
+  if (remainingSlots <= 0) return memoryFirst;
+
+  const rest = llmOptions
+    .filter((option) => !memoryFirst.some((r) => isSameSentence(option, r)))
+    .slice(0, remainingSlots);
+  return [...memoryFirst, ...rest];
 }
 
 /** callee transcript → up to 3 short reply options. Tolerant JSON parsing. */
@@ -141,7 +179,8 @@ export function buildRecentContext(
   return lines.join('\n');
 }
 
-export function parseReplies(raw: string): string[] {
+/** @param limit Max entries to return — 3 for smartReplies, 2 for glossToTextOptions. */
+export function parseReplies(raw: string, limit = 3): string[] {
   // 1) Ideal case: a single clean JSON array anywhere in the output.
   const match = raw.match(/\[[\s\S]*\]/);
   if (match) {
@@ -149,7 +188,7 @@ export function parseReplies(raw: string): string[] {
       const arr = JSON.parse(match[0]);
       if (Array.isArray(arr)) {
         const out = arr.map((x) => String(x).trim()).filter(Boolean);
-        if (out.length) return out.slice(0, 3);
+        if (out.length) return out.slice(0, limit);
       }
     } catch {
       // fall through
@@ -158,11 +197,11 @@ export function parseReplies(raw: string): string[] {
   // 2) Small models often emit several arrays or code fences, e.g.
   //    ["a"]["b"]["c"]  — not valid JSON. Pull out every quoted string.
   const quoted = [...raw.matchAll(/"([^"]+)"/g)].map((m) => m[1].trim());
-  if (quoted.length) return quoted.slice(0, 3);
+  if (quoted.length) return quoted.slice(0, limit);
   // 3) Last resort: line-based recovery.
   return raw
     .split('\n')
     .map((l) => l.replace(/^[\s\-*\d.)[\]"']+/, '').replace(/["'\],]+$/, '').trim())
     .filter(Boolean)
-    .slice(0, 3);
+    .slice(0, limit);
 }

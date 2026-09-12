@@ -3,8 +3,10 @@ import {
   buildRecentContext,
   glossToText,
   glossToTextOptions,
+  isSameSentence,
   parseReplies,
   smartReplies,
+  withRememberedSentences,
   type ConversationTurn,
 } from '..';
 import type { LlmProvider } from '../LlmProvider';
@@ -32,7 +34,7 @@ describe('glossToText', () => {
 });
 
 describe('glossToTextOptions', () => {
-  it('parses 3 candidate sentences from a clean JSON array', async () => {
+  it('parses up to 3 candidate sentences from a clean JSON array — the LLM decides 2 vs 3, not a hard cap', async () => {
     const llm = fakeLlm(
       JSON.stringify([
         'Have you arrived home, right or left?',
@@ -49,6 +51,74 @@ describe('glossToTextOptions', () => {
     const llm = fakeLlm('["Where is your home?"]["Which way to your home?"]');
     const options = await glossToTextOptions(llm, ['WHERE', 'HOME']);
     expect(options).toEqual(['Where is your home?', 'Which way to your home?']);
+  });
+});
+
+describe('isSameSentence', () => {
+  it('matches identical text', () => {
+    expect(isSameSentence('Where is your home?', 'Where is your home?')).toBe(true);
+  });
+
+  it('matches case- and whitespace-insensitively', () => {
+    expect(isSameSentence('  where is your home?  ', 'WHERE IS YOUR HOME?')).toBe(true);
+  });
+
+  it('does not match different text', () => {
+    expect(isSameSentence('Where is your home?', 'Where am I delivering to?')).toBe(false);
+  });
+
+  it('is false when either side is undefined', () => {
+    expect(isSameSentence(undefined, 'Where is your home?')).toBe(false);
+    expect(isSameSentence('Where is your home?', undefined)).toBe(false);
+  });
+});
+
+describe('withRememberedSentences', () => {
+  it('returns the LLM options unchanged when nothing is remembered', () => {
+    expect(withRememberedSentences([], ['A', 'B'])).toEqual(['A', 'B']);
+  });
+
+  it('puts every remembered sentence first, ahead of the LLM options', () => {
+    expect(withRememberedSentences(['Remembered pick'], ['A', 'B'])).toEqual([
+      'Remembered pick',
+      'A',
+      'B',
+    ]);
+  });
+
+  it('caps the total at 3: 1 remembered fills the rest from the LLM', () => {
+    expect(withRememberedSentences(['Mem 1'], ['A', 'B', 'C'])).toEqual(['Mem 1', 'A', 'B']);
+  });
+
+  it('caps the total at 3: 2 remembered leaves room for exactly 1 from the LLM', () => {
+    expect(withRememberedSentences(['Mem 1', 'Mem 2'], ['A', 'B', 'C'])).toEqual([
+      'Mem 1',
+      'Mem 2',
+      'A',
+    ]);
+  });
+
+  it('3 remembered fills every slot — none of the LLM options are used', () => {
+    expect(withRememberedSentences(['Mem 1', 'Mem 2', 'Mem 3'], ['A', 'B', 'C'])).toEqual([
+      'Mem 1',
+      'Mem 2',
+      'Mem 3',
+    ]);
+  });
+
+  it('drops an LLM option that exactly matches a remembered one instead of duplicating it', () => {
+    expect(
+      withRememberedSentences(
+        ['Where is your home?'],
+        ['Where is your home?', 'Where am I delivering to?'],
+      ),
+    ).toEqual(['Where is your home?', 'Where am I delivering to?']);
+  });
+
+  it('matches case- and whitespace-insensitively when dropping duplicates', () => {
+    expect(
+      withRememberedSentences(['where is your home?'], ['  Where is your home?  ', 'Other']),
+    ).toEqual(['where is your home?', 'Other']);
   });
 });
 

@@ -7,12 +7,20 @@ import {
   type CameraStageHandle,
   GlossBubbles,
   HandSkeleton,
+  Icon,
   IconButton,
   Screen,
   SignGuideCircle,
   Text,
 } from '../components';
 import { DEMO_DRAFT } from '../data/mock';
+import {
+  getRememberedSentences,
+  isSameSentence,
+  MAX_CANDIDATES_PER_SEQUENCE,
+  rememberSentenceChoice,
+  withRememberedSentences,
+} from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
@@ -44,9 +52,17 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Up to 3 candidate readings for the current draft, same ambiguity the call screen resolves by
-  // letting the person pick — here, picking one also speaks it.
+  // Candidate readings for the current draft: every sentence remembered for this exact sign
+  // sequence leads (most-recently-picked first — the same signs can genuinely mean different
+  // things on different occasions, so picking a new one adds to memory rather than replacing
+  // it), then LLM readings fill whatever slots are left, up to MAX_CANDIDATES_PER_SEQUENCE total
+  // — same ambiguity the call screen resolves by letting the person pick; here, picking one also
+  // speaks it.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
+  // The sentences remembered for the current sign sequence, if any — kept
+  // separately so the UI can tag whichever displayed sentence matches one
+  // of them as "From memory".
+  const [rememberedSentences, setRememberedSentences] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
   const [spoken, setSpoken] = useState<string | null>(null);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
@@ -59,6 +75,11 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
 
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
+  // Tracks the draft value WE last set programmatically (as opposed to one
+  // the user picked) — lets a later backfill (see the llm.status effect
+  // below) upgrade `draftOptions` without ever clobbering a choice the user
+  // already made.
+  const autoDraftRef = useRef<string>(DEMO_DRAFT);
 
   useEffect(() => () => speaker.stop(), [speaker]);
 
@@ -81,6 +102,81 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     [speaker],
   );
 
+  // Once a sentence is picked & spoken, the recognized-signs panel closes
+  // and the draft resets — that's the end of the "turn", so the next sign
+  // starts a fresh sequence rather than appending onto the one just spoken.
+  // Also invalidates any in-flight compose so a late-arriving result can't
+  // repopulate the panel right after it closes.
+  const resetRecognition = useCallback(() => {
+    composeRequestId.current += 1;
+    lastAppendedLabel.current = null;
+    autoDraftRef.current = DEMO_DRAFT;
+    setRecognized([]);
+    setDraftOptions([]);
+    setRememberedSentences([]);
+    setDraft(DEMO_DRAFT);
+  }, []);
+
+  // The one place a sign sequence's remembered sentences + LLM options are
+  // looked up and merged — called both when a new sign completes (below)
+  // and, via the effect further down, to backfill LLM options for the
+  // CURRENT sequence once the model finishes loading (it's often still
+  // "loading" partway through a sign sequence — never blocking signing on
+  // it means the LLM's readings can otherwise never appear for that
+  // sequence).
+  const composeForSequence = useCallback(
+    (sequence: string[]) => {
+      const requestId = ++composeRequestId.current;
+
+      (async () => {
+        // Independent of the LLM: every sentence the user has picked for
+        // this EXACT sign sequence before — always leads the list.
+        const remembered = await getRememberedSentences(sequence).catch(() => []);
+        if (composeRequestId.current !== requestId) return;
+        setRememberedSentences(remembered);
+
+        let options: string[] = [];
+        // Memory already fills every slot — skip the LLM call entirely,
+        // there's no room left to show anything it would return.
+        if (remembered.length < MAX_CANDIDATES_PER_SEQUENCE && llm.status === 'ready') {
+          try {
+            options = await llm.composeSentenceOptions(sequence);
+          } catch {
+            options = [];
+          }
+          if (composeRequestId.current !== requestId) return;
+        }
+        // else: memory already full, or the model isn't ready — never
+        // block signing on it. Show whatever's remembered, else the raw
+        // glosses; this function runs again once the model becomes ready
+        // (see the effect below) to add the LLM's readings to whatever is
+        // still current, unless memory is already full.
+
+        const merged = withRememberedSentences(remembered, options);
+        const nextDraft = merged[0] ?? sequence.join(' ');
+        setDraftOptions(merged);
+        // Only move the draft if it's still pointing at whatever WE set it
+        // to last time — never overwrite a sentence the user has picked.
+        setDraft((prev) => (prev === autoDraftRef.current ? nextDraft : prev));
+        autoDraftRef.current = nextDraft;
+      })();
+    },
+    [llm],
+  );
+
+  // Speaking a sentence out of the candidate list IS the confirmation
+  // gate here (see the screen doc comment) — so that tap is also the
+  // moment the pick is remembered for this exact sign sequence, and the
+  // moment the recognized-signs panel closes for the next one.
+  const speakAndRemember = useCallback(
+    (text: string) => {
+      speak(text);
+      rememberSentenceChoice(recognized, text).catch(() => undefined);
+      resetRecognition();
+    },
+    [speak, recognized, resetRecognition],
+  );
+
   const handleGuideComplete = useCallback(() => {
     cameraStageRef.current?.capture();
     if (!zonedMatch?.isKnown || zonedMatch.label === lastAppendedLabel.current) return;
@@ -88,30 +184,26 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     lastAppendedLabel.current = zonedMatch.label;
     setRecognized((prev) => {
       const updated = [...prev, zonedMatch.label];
-
-      if (llm.status === 'ready') {
-        const requestId = ++composeRequestId.current;
-        llm
-          .composeSentenceOptions(updated)
-          .then((options) => {
-            if (composeRequestId.current !== requestId) return;
-            setDraftOptions(options);
-            setDraft(options[0] ?? updated.join(' '));
-          })
-          .catch(() => {
-            if (composeRequestId.current === requestId) {
-              setDraftOptions([]);
-              setDraft(updated.join(' '));
-            }
-          });
-      } else {
-        setDraftOptions([]);
-        setDraft(updated.join(' '));
-      }
-
+      composeForSequence(updated);
       return updated;
     });
-  }, [zonedMatch, llm]);
+  }, [zonedMatch, composeForSequence]);
+
+  // Signing doesn't wait for the LLM (composeForSequence above always shows
+  // SOMETHING immediately), so a sequence recognized while the model was
+  // still loading only ever shows its remembered pick, if any — with no
+  // later nudge, the LLM's readings would just never appear for that
+  // sequence. Once the model finishes loading, recompute for whatever is
+  // still the current sequence so those readings can join it.
+  useEffect(() => {
+    if (llm.status === 'ready' && recognized.length > 0) {
+      composeForSequence(recognized);
+    }
+    // Deliberately keyed on llm.status alone: recomposing on every new sign
+    // is handleGuideComplete's job, this effect exists only to backfill a
+    // sequence that was already recognized before the model became ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [llm.status]);
 
   return (
     <Screen dark edgeToEdge>
@@ -244,12 +336,13 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               {[draft, ...draftOptions.filter((option) => option !== draft)].map((sentence, index) => {
                 if (!sentence.trim()) return null;
                 const speaking = speakingState === 'speaking' && spoken === sentence;
+                const fromMemory = rememberedSentences.some((r) => isSameSentence(sentence, r));
                 return (
                   <Pressable
                     key={`${sentence}-${index}`}
                     accessibilityRole="button"
                     accessibilityLabel={speaking ? `Stop speaking: ${sentence}` : `Speak: ${sentence}`}
-                    onPress={() => (speaking ? speaker.stop() : speak(sentence))}
+                    onPress={() => (speaking ? speaker.stop() : speakAndRemember(sentence))}
                     style={[
                       styles.optionRow,
                       {
@@ -263,19 +356,34 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                       },
                     ]}
                   >
-                    <Text
-                      variant={index === 0 ? 'heading' : 'body'}
-                      style={[styles.optionText, speaking ? undefined : styles.onDark]}
-                      tone={speaking ? 'accent' : undefined}
-                    >
-                      {sentence}
-                    </Text>
+                    <View style={styles.optionTextCol}>
+                      <Text
+                        variant={index === 0 ? 'heading' : 'body'}
+                        style={speaking ? undefined : styles.onDark}
+                        tone={speaking ? 'accent' : undefined}
+                      >
+                        {sentence}
+                      </Text>
+                      {fromMemory ? (
+                        <View
+                          style={[
+                            styles.memoryTagRow,
+                            { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs / 2 },
+                          ]}
+                        >
+                          <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                          <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                            From memory
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
                     <IconButton
                       name={speaking ? 'stop' : 'volume'}
                       accessibilityLabel={speaking ? 'Stop' : 'Speak this sentence'}
                       variant={speaking ? 'accent' : 'translucent'}
                       size={36}
-                      onPress={() => (speaking ? speaker.stop() : speak(sentence))}
+                      onPress={() => (speaking ? speaker.stop() : speakAndRemember(sentence))}
                     />
                   </Pressable>
                 );
@@ -330,7 +438,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               size="lg"
               block
               disabled={draft.trim().length === 0}
-              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speak(draft))}
+              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speakAndRemember(draft))}
             />
 
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
@@ -384,7 +492,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  optionText: { flex: 1 },
+  optionTextCol: { flex: 1 },
+  memoryTagRow: { flexDirection: 'row', alignItems: 'center' },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
