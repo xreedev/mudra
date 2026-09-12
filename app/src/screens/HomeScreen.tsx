@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Icon, Screen, Text, Tile } from '../components';
+import { listRememberedSentences } from '../llm';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -13,6 +15,22 @@ import type { ScreenProps } from '../navigation/types';
  */
 export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const theme = useTheme();
+  const [memoryCount, setMemoryCount] = useState(0);
+
+  // Re-read on every focus (not just mount) so a sentence remembered on Call
+  // or Talk Aloud, or one forgotten on the Memory screen, updates this
+  // count the moment the person lands back on Home.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      listRememberedSentences().then((entries) => {
+        if (!cancelled) setMemoryCount(entries.length);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   return (
     <Screen scroll>
@@ -52,6 +70,7 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             title="Memory"
             description="Sentences remembered from signing"
             icon="memory"
+            meta={memoryCount > 0 ? `${memoryCount} saved` : undefined}
             onPress={() => navigation.navigate('Memory')}
           />
         </View>
