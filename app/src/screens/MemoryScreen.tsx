@@ -13,7 +13,7 @@ import {
   TextField,
 } from '../components';
 import { SEED_MEMORIES, type MemoryPair } from '../data/mock';
-import { useTheme } from '../theme';
+import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
@@ -179,7 +179,7 @@ function MemoryRow({
         <GlossChips tokens={pair.tokens} size="sm" />
       </View>
 
-      <View style={[styles.arrowRow, { marginVertical: theme.spacing.sm }]}>
+      <View style={[styles.arrowRow, { marginVertical: theme.spacing.sm, gap: theme.spacing.xs }]}>
         <View style={[styles.arrowLine, { backgroundColor: theme.colors.border }]} />
         <Icon name="chevron-right" size={14} color={theme.colors.textMuted} />
       </View>
@@ -190,13 +190,13 @@ function MemoryRow({
         <Text variant="caption" tone="muted">
           Used {pair.useCount} {pair.useCount === 1 ? 'time' : 'times'}
         </Text>
-        <View style={styles.rowActions}>
+        <View style={[styles.rowActions, { gap: theme.spacing.lg }]}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={pair.pinned ? 'Unpin phrase' : 'Pin phrase'}
             onPress={onTogglePin}
-            hitSlop={10}
-            style={styles.rowAction}
+            hitSlop={6}
+            style={[styles.rowAction, { minHeight: HIT_SLOP_SIZE, gap: theme.spacing.xs }]}
           >
             <Icon
               name="pin"
@@ -211,8 +211,8 @@ function MemoryRow({
             accessibilityRole="button"
             accessibilityLabel="Delete phrase"
             onPress={onDelete}
-            hitSlop={10}
-            style={styles.rowAction}
+            hitSlop={6}
+            style={[styles.rowAction, { minHeight: HIT_SLOP_SIZE, gap: theme.spacing.xs }]}
           >
             <Icon name="trash" size={16} color={theme.colors.textMuted} />
           </Pressable>
@@ -228,9 +228,9 @@ const styles = StyleSheet.create({
   searchInput: { paddingLeft: 42 },
   searchIcon: { position: 'absolute', left: 14, zIndex: 1 },
   rowTop: { flexDirection: 'row' },
-  arrowRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  arrowRow: { flexDirection: 'row', alignItems: 'center' },
   arrowLine: { height: StyleSheet.hairlineWidth * 2, width: 18 },
   rowMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  rowActions: { flexDirection: 'row', alignItems: 'center', gap: 18 },
-  rowAction: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  rowActions: { flexDirection: 'row', alignItems: 'center' },
+  rowAction: { flexDirection: 'row', alignItems: 'center' },
 });

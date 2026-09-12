@@ -55,7 +55,7 @@ export function ChatScreen(_: ScreenProps<'Chat'>) {
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={insets.bottom + 12}
+        keyboardVerticalOffset={insets.bottom + theme.spacing.md}
       >
         <FlatList
           ref={list}
@@ -77,6 +77,7 @@ export function ChatScreen(_: ScreenProps<'Chat'>) {
               paddingLeft: theme.spacing.lg,
               paddingRight: theme.spacing.xs,
               marginBottom: theme.spacing.sm,
+              gap: theme.spacing.sm,
             },
           ]}
         >
@@ -146,12 +147,11 @@ const styles = StyleSheet.create({
   bubbleRow: { flexDirection: 'row' },
   mine: { justifyContent: 'flex-end' },
   theirs: { justifyContent: 'flex-start' },
-  bubble: { maxWidth: '86%', borderWidth: StyleSheet.hairlineWidth * 2, gap: 6 },
+  bubble: { maxWidth: '86%', borderWidth: StyleSheet.hairlineWidth * 2, gap: 4 },
   time: { alignSelf: 'flex-end' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   input: { flex: 1, maxHeight: 120 },

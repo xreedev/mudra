@@ -17,7 +17,7 @@ import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { LocalSpeaker, type SpeakingState } from '../speech/LocalSpeaker';
-import { useTheme } from '../theme';
+import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
@@ -137,7 +137,12 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
             <SignGuideCircle active={handDetected} size={GUIDE_SIZE} onComplete={handleGuideComplete} />
           </View>
 
-          <View style={[styles.topBar, { paddingHorizontal: theme.spacing.lg }]}>
+          <View
+            style={[
+              styles.topBar,
+              { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingVertical: theme.spacing.sm },
+            ]}
+          >
             <IconButton
               name="chevron-left"
               accessibilityLabel="Go back"
@@ -156,7 +161,12 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                 Sign, then pick a sentence to hear it
               </Text>
             </View>
-            <View style={styles.deviceBadge}>
+            <View
+              style={[
+                styles.deviceBadge,
+                { paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs },
+              ]}
+            >
               <Text variant="caption" style={styles.onDark}>
                 ON DEVICE
               </Text>
@@ -170,14 +180,28 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
             />
           </View>
 
-          <View style={[styles.pillRow, { paddingHorizontal: theme.spacing.lg }]}>
-            <View style={styles.pill}>
+          <View
+            style={[
+              styles.pillRow,
+              { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+            ]}
+          >
+            <View style={[styles.pill, { paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs }]}>
               <Text variant="caption" style={styles.onDark}>
                 Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
               </Text>
             </View>
             {llm.status !== 'ready' ? (
-              <View style={[styles.pill, { marginLeft: theme.spacing.sm }]}>
+              <View
+                style={[
+                  styles.pill,
+                  {
+                    marginLeft: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                  },
+                ]}
+              >
                 <Text variant="caption" style={styles.onDark}>
                   {llm.status === 'loading' && 'Loading on-device LLM…'}
                   {llm.status === 'checking' && 'Checking for on-device model…'}
@@ -196,18 +220,21 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               {
                 paddingHorizontal: theme.spacing.lg,
                 paddingTop: theme.spacing.xl,
+                paddingBottom: theme.spacing.sm,
                 borderTopLeftRadius: theme.radius['2xl'],
                 borderTopRightRadius: theme.radius['2xl'],
                 gap: theme.spacing.md,
               },
             ]}
           >
-            <View style={{ gap: theme.spacing.sm }}>
-              <Text variant="label" style={[styles.onDark, styles.dim]}>
-                RECOGNIZED
-              </Text>
-              <GlossBubbles tokens={recognized} />
-            </View>
+            {recognized.length > 0 ? (
+              <View style={{ gap: theme.spacing.xs }}>
+                <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                  RECOGNIZED
+                </Text>
+                <GlossBubbles tokens={recognized} />
+              </View>
+            ) : null}
 
             <View style={[styles.draftPanel, { borderRadius: theme.radius.lg, padding: theme.spacing.lg }]}>
               <Text variant="label" style={[styles.onDark, styles.dim]}>
@@ -229,7 +256,10 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                         borderRadius: theme.radius.md,
                         borderColor: speaking ? theme.colors.accent : 'rgba(255,255,255,0.25)',
                         backgroundColor: speaking ? theme.colors.accentSoft : 'transparent',
-                        marginTop: index === 0 ? theme.spacing.sm : 6,
+                        marginTop: index === 0 ? theme.spacing.sm : theme.spacing.xs,
+                        gap: theme.spacing.sm,
+                        paddingHorizontal: theme.spacing.md,
+                        paddingVertical: theme.spacing.sm,
                       },
                     ]}
                   >
@@ -257,14 +287,17 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                 </Text>
               ) : null}
 
-              <View style={[styles.draftActions, { marginTop: theme.spacing.md }]}>
+              <View style={[styles.draftActions, { marginTop: theme.spacing.md, gap: theme.spacing.sm }]}>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset draft"
                   onPress={() => {
                     speaker.stop();
                     setDraft(DEMO_DRAFT);
                     setDraftOptions([]);
                   }}
-                  hitSlop={8}
+                  hitSlop={6}
+                  style={styles.textAction}
                 >
                   <Text variant="caption" tone="accent">
                     Reset
@@ -274,12 +307,15 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                   ·
                 </Text>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear draft"
                   onPress={() => {
                     speaker.stop();
                     setDraft('');
                     setDraftOptions([]);
                   }}
-                  hitSlop={8}
+                  hitSlop={6}
+                  style={styles.textAction}
                 >
                   <Text variant="caption" tone="accent">
                     Clear
@@ -297,10 +333,11 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               onPress={() => (speakingState === 'speaking' ? speaker.stop() : speak(draft))}
             />
 
-            <View style={styles.controls}>
+            <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
               <IconButton
-                name="mic-off"
+                name={muted ? 'mic-off' : 'mic'}
                 accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+                selected={muted}
                 variant={muted ? 'accent' : 'translucent'}
                 size={52}
                 onPress={() => setMuted(!muted)}
@@ -323,41 +360,34 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderStyle: 'dashed',
   },
-  topBar: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+  topBar: { flexDirection: 'row', alignItems: 'center' },
   topBarTitle: { flex: 1 },
   onDark: { color: '#FFFFFF' },
   dim: { opacity: 0.7 },
   deviceBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   overlay: { flex: 1, justifyContent: 'flex-start' },
-  pillRow: { flexDirection: 'row', marginTop: 10 },
+  pillRow: { flexDirection: 'row' },
   pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
   spacer: { flex: 1 },
-  chrome: { paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)' },
+  chrome: { backgroundColor: 'rgba(0,0,0,0.4)' },
   draftPanel: { backgroundColor: 'rgba(0,0,0,0.35)' },
-  draftActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  draftActions: { flexDirection: 'row', alignItems: 'center' },
+  textAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
   optionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     borderWidth: StyleSheet.hairlineWidth * 2,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
   },
   optionText: { flex: 1 },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 28,
   },
 });

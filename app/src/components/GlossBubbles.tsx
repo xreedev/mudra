@@ -14,8 +14,9 @@ export interface GlossBubblesProps {
  * "words appearing one at a time as someone communicates."
  */
 export function GlossBubbles({ tokens }: GlossBubblesProps) {
+  const theme = useTheme();
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { gap: theme.spacing.xs }]}>
       {tokens.map((token, index) => (
         <Bubble key={`${token}-${index}`} label={token} />
       ))}
@@ -48,7 +49,7 @@ function Bubble({ label }: { label: string }) {
           borderColor: theme.colors.accent,
           borderRadius: theme.radius.pill,
           paddingHorizontal: theme.spacing.sm,
-          paddingVertical: 4,
+          paddingVertical: theme.spacing.xs / 2,
           opacity: progress,
           transform: [
             { translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
@@ -65,7 +66,7 @@ function Bubble({ label }: { label: string }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   bubble: { borderWidth: StyleSheet.hairlineWidth * 2 },
   text: { fontSize: 11, lineHeight: 15 },
 });

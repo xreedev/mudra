@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 import { Button, type ButtonVariant } from './Button';
 import { Card } from './Card';
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from '../theme';
 
@@ -38,9 +39,16 @@ export function ConfirmModal({
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <View style={[styles.backdrop, { backgroundColor: theme.colors.overlay }]}>
+      <View
+        style={[styles.backdrop, { backgroundColor: theme.colors.overlay, padding: theme.spacing['2xl'] }]}
+      >
         <Card tone="raised" style={styles.panel}>
-          <Text variant="heading">{title}</Text>
+          <View style={[styles.titleRow, { gap: theme.spacing.sm }]}>
+            {confirmVariant === 'danger' ? (
+              <Icon name="alert" size={22} color={theme.colors.danger} />
+            ) : null}
+            <Text variant="heading">{title}</Text>
+          </View>
           <Text variant="body" tone="muted" style={{ marginTop: theme.spacing.sm }}>
             {message}
           </Text>
@@ -55,8 +63,9 @@ export function ConfirmModal({
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
+  backdrop: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   panel: { width: '100%', maxWidth: 380 },
+  titleRow: { flexDirection: 'row', alignItems: 'center' },
   actions: { flexDirection: 'row' },
   grow: { flex: 1 },
 });

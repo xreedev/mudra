@@ -7,6 +7,7 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { Icon } from './Icon';
 import { Text } from './Text';
 import { useTheme } from '../theme';
 
@@ -76,9 +77,12 @@ export function TextField({
         ]}
       />
       {hint ? (
-        <Text variant="caption" tone={invalid ? 'danger' : 'muted'}>
-          {hint}
-        </Text>
+        <View style={styles.hintRow}>
+          {invalid ? <Icon name="alert" size={14} color={theme.colors.danger} /> : null}
+          <Text variant="caption" tone={invalid ? 'danger' : 'muted'}>
+            {hint}
+          </Text>
+        </View>
       ) : null}
     </View>
   );
@@ -86,4 +90,5 @@ export function TextField({
 
 const styles = StyleSheet.create({
   input: { borderWidth: StyleSheet.hairlineWidth * 2 },
+  hintRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
 });

@@ -15,11 +15,15 @@ export interface EmptyStateProps {
 export function EmptyState({ icon, title, body, action }: EmptyStateProps) {
   const theme = useTheme();
   return (
-    <View style={[styles.wrapper, { paddingVertical: theme.spacing['4xl'] }]}>
+    <View style={[styles.wrapper, { paddingVertical: theme.spacing['4xl'], gap: theme.spacing.sm }]}>
       <View
         style={[
           styles.badge,
-          { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: theme.colors.border,
+            marginBottom: theme.spacing.xs,
+          },
         ]}
       >
         <Icon name={icon} size={26} color={theme.colors.textMuted} />
@@ -36,7 +40,7 @@ export function EmptyState({ icon, title, body, action }: EmptyStateProps) {
 }
 
 const styles = StyleSheet.create({
-  wrapper: { alignItems: 'center', gap: 10 },
+  wrapper: { alignItems: 'center' },
   badge: {
     width: 56,
     height: 56,
@@ -44,7 +48,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth * 2,
-    marginBottom: 4,
   },
   centered: { textAlign: 'center' },
   body: { maxWidth: 280 },

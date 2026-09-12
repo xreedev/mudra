@@ -44,7 +44,11 @@ export function AppHeader({ title, subtitle, back = true, action }: AppHeaderPro
             </Text>
           ) : null}
         </View>
-        {action ? <View style={styles.action}>{action}</View> : null}
+        {action ? (
+          <View style={[styles.action, { marginLeft: theme.spacing.md, paddingTop: theme.spacing.xs / 2 }]}>
+            {action}
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -54,5 +58,5 @@ const styles = StyleSheet.create({
   wrapper: { gap: 0 },
   row: { flexDirection: 'row', alignItems: 'flex-start' },
   titles: { flex: 1 },
-  action: { marginLeft: 12, paddingTop: 2 },
+  action: {},
 });

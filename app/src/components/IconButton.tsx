@@ -9,8 +9,16 @@ export interface IconButtonProps {
   /** Required: an icon-only control is invisible to a screen reader without it. */
   accessibilityLabel: string;
   variant?: 'plain' | 'surface' | 'accent' | 'danger' | 'translucent';
+  /**
+   * Visual size of the button. Never goes below the 44px minimum touch target — a smaller
+   * value only shrinks the icon/background, the tappable area is padded back up to 44px via
+   * `hitSlop` so this app's controls stay reachable for someone signing one-handed.
+   */
   size?: number;
   disabled?: boolean;
+  /** For a toggle button (e.g. mute) whose icon/variant already changes with state — reported
+   *  to assistive tech alongside the visual change, not as a substitute for it. */
+  selected?: boolean;
   style?: ViewStyle;
 }
 
@@ -21,9 +29,11 @@ export function IconButton({
   variant = 'plain',
   size = HIT_SLOP_SIZE,
   disabled = false,
+  selected,
   style,
 }: IconButtonProps) {
   const theme = useTheme();
+  const hitSlop = Math.max(0, Math.ceil((HIT_SLOP_SIZE - size) / 2));
 
   const background =
     variant === 'surface'
@@ -49,9 +59,9 @@ export function IconButton({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, selected }}
       onPress={disabled ? undefined : onPress}
-      hitSlop={8}
+      hitSlop={hitSlop}
       style={({ pressed }) => [
         styles.base,
         {

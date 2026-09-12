@@ -17,11 +17,13 @@ export type IconName =
   | 'shutter'
   | 'flip'
   | 'mic-off'
+  | 'mic'
   | 'send'
   | 'lock'
   | 'pin'
   | 'volume'
-  | 'stop';
+  | 'stop'
+  | 'alert';
 
 export interface IconProps {
   name: IconName;
@@ -152,6 +154,14 @@ function renderPaths(name: IconName, common: StrokeProps, stroke: string) {
           <Path {...common} d="M12 17.5V20M4.5 4.5l15 15" />
         </>
       );
+    case 'mic':
+      return (
+        <>
+          <Path {...common} d="M9.5 5.5a2.5 2.5 0 0 1 5 0v6a2.5 2.5 0 0 1-5 0v-6Z" />
+          <Path {...common} d="M7 11.5V12a5 5 0 0 0 10 0v-.5" />
+          <Path {...common} d="M12 17.5V20" />
+        </>
+      );
     case 'send':
       return <Path {...common} d="M4.5 12 20 4.5 15 20l-4-6-6.5-2Z" />;
     case 'lock':
@@ -177,6 +187,14 @@ function renderPaths(name: IconName, common: StrokeProps, stroke: string) {
       );
     case 'stop':
       return <Rect {...common} x={6} y={6} width={12} height={12} rx={2.5} fill={stroke} />;
+    case 'alert':
+      return (
+        <>
+          <Path {...common} d="M12 3.5 21.5 20h-19L12 3.5Z" />
+          <Path {...common} d="M12 10v4" />
+          <Circle cx={12} cy={17} r={1} fill={stroke} stroke="none" />
+        </>
+      );
     default:
       return null;
   }

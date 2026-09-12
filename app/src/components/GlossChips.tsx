@@ -21,7 +21,7 @@ export function GlossChips({ tokens, tone = 'default', size = 'md' }: GlossChips
   const accent = tone === 'accent';
 
   return (
-    <View style={styles.row}>
+    <View style={[styles.row, { gap: theme.spacing.xs }]}>
       {tokens.map((token, index) => (
         <View
           key={`${token}-${index}`}
@@ -32,7 +32,7 @@ export function GlossChips({ tokens, tone = 'default', size = 'md' }: GlossChips
               borderColor: accent ? theme.colors.accent : theme.colors.border,
               borderRadius: theme.radius.sm,
               paddingHorizontal: size === 'sm' ? theme.spacing.sm : theme.spacing.md,
-              paddingVertical: size === 'sm' ? 3 : 5,
+              paddingVertical: theme.spacing.xs,
             },
           ]}
         >
@@ -50,7 +50,7 @@ export function GlossChips({ tokens, tone = 'default', size = 'md' }: GlossChips
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
+  row: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' },
   chip: { borderWidth: StyleSheet.hairlineWidth * 2 },
   chipTextSmall: { fontSize: 11, lineHeight: 15 },
 });
