@@ -30,8 +30,15 @@ import {
   localProvider,
   currentModelPath,
 } from './src/llm/LocalLlmProvider';
-import {glossToText, smartReplies, glossSystemWithFewShot} from './src/llm/features';
-import {GLOSS_CASES, REPLY_CASES} from './src/llm/testCases';
+import {
+  glossToText,
+  smartReplies,
+  glossSystemWithFewShot,
+  appendTurn,
+  buildRecentContext,
+  type ConversationTurn,
+} from './src/llm/features';
+import {GLOSS_CASES, REPLY_CASES, CONVERSATION_SCRIPTS} from './src/llm/testCases';
 
 const MODELS_DIR = `${RNFS.ExternalDirectoryPath}/models`;
 // react-native-fs's readDir() calls File.listFiles() natively, which has a
@@ -193,6 +200,39 @@ export default function App(): React.JSX.Element {
     setBusy(false);
   }, [push]);
 
+  const runConversationMemoryDemo = useCallback(async () => {
+    if (!(await localProvider.ready())) {
+      push({kind: 'err', text: 'Load a model first.'});
+      return;
+    }
+    setBusy(true);
+    push({kind: 'info', text: '── conversation memory demo ──'});
+    for (const script of CONVERSATION_SCRIPTS) {
+      push({kind: 'info', text: `[${script.id}]`});
+      let turns: ConversationTurn[] = [];
+      for (const t of script.turns) {
+        turns = appendTurn(turns, t.speaker, t.text);
+        push({kind: 'info', text: `  +${t.speaker}: ${t.text}`});
+      }
+      // Now ask for smart replies to a NEW callee line, using only the
+      // rolling window built from everything appended above — proves the
+      // window still carries the original topic several turns later.
+      const newLine = 'Would you like a text reminder when it is ready?';
+      const context = buildRecentContext(turns, {maxTurns: 6, maxChars: 500});
+      push({kind: 'metric', text: `  context window fed to LLM:\n${context.split('\n').map(l => '    ' + l).join('\n')}`});
+      const t0 = Date.now();
+      try {
+        const replies = await smartReplies(localProvider, context, newLine);
+        push({kind: 'ok', text: `  callee: "${newLine}"`});
+        replies.forEach((r, i) => push({kind: 'info', text: `    ${i + 1}. ${r}`}));
+        push({kind: 'metric', text: `  ${Date.now() - t0}ms`});
+      } catch (e: any) {
+        push({kind: 'err', text: `  ${e?.message ?? e}`});
+      }
+    }
+    setBusy(false);
+  }, [push]);
+
   const runFree = useCallback(async () => {
     if (!(await localProvider.ready())) {
       push({kind: 'err', text: 'Load a model first.'});
@@ -262,6 +302,7 @@ export default function App(): React.JSX.Element {
       <View style={styles.row}>
         <Btn label="Run gloss→text suite" onPress={runGlossSuite} disabled={busy || !loaded} primary />
         <Btn label="Run smart-replies suite" onPress={runReplySuite} disabled={busy || !loaded} primary />
+        <Btn label="Run conversation-memory demo" onPress={runConversationMemoryDemo} disabled={busy || !loaded} primary />
       </View>
 
       <View style={styles.freeRow}>

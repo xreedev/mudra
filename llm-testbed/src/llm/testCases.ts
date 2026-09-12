@@ -46,6 +46,33 @@ export interface ReplyCase {
   lastTranscript: string;
 }
 
+/**
+ * A multi-turn pharmacy call, to exercise the rolling conversation-memory
+ * window (buildRecentContext / appendTurn in features.ts) end-to-end rather
+ * than a single static context string. Feed these in order via appendTurn(),
+ * building smartReplies' context from buildRecentContext() at each step —
+ * a later reply should stay consistent with earlier turns (e.g. still knows
+ * which drug/strip count was asked for several turns back).
+ */
+export interface ConversationScript {
+  id: string;
+  turns: Array<{ speaker: 'caller' | 'callee'; text: string }>;
+}
+
+export const CONVERSATION_SCRIPTS: ConversationScript[] = [
+  {
+    id: 'pharmacy-multiturn',
+    turns: [
+      { speaker: 'caller', text: 'Hello, I need one strip of Metformin.' },
+      { speaker: 'callee', text: 'Sure, do you have a prescription on file with us?' },
+      { speaker: 'caller', text: 'Yes, I am coming.' },
+      { speaker: 'callee', text: 'Great, we have it ready. Anything else you need today?' },
+      // The next reply should stay about Metformin/pickup, not drift —
+      // proves the window still carries the original topic 4 turns later.
+    ],
+  },
+];
+
 export const REPLY_CASES: ReplyCase[] = [
   {
     id: 'pharmacy-stock',
