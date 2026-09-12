@@ -70,3 +70,35 @@ export async function getRememberedSentence(
   const entries = await loadSentenceMemory();
   return entries[glossSequenceKey(tokens)];
 }
+
+export interface RememberedSentenceEntry {
+  /** The raw `glossSequenceKey` — also what `deleteRememberedSentence` takes. */
+  key: string;
+  tokens: string[];
+  sentence: string;
+}
+
+/** Every remembered pick, for a "Memory" screen to list — newest-looking
+ *  order isn't tracked (this store only keeps the current pick per
+ *  sequence, not history), so entries are just sorted by key for a stable,
+ *  predictable list. */
+export async function listRememberedSentences(): Promise<RememberedSentenceEntry[]> {
+  const entries = await loadSentenceMemory();
+  return Object.entries(entries)
+    .map(([key, sentence]) => ({ key, tokens: key.split(' ').filter(Boolean), sentence }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+}
+
+/** Removes one remembered pick by its `glossSequenceKey`. A no-op if it's
+ *  already gone. */
+export async function deleteRememberedSentence(key: string): Promise<void> {
+  const entries = await loadSentenceMemory();
+  if (!(key in entries)) return;
+  delete entries[key];
+  await saveSentenceMemory(entries);
+}
+
+/** Forgets every remembered pick. */
+export async function clearSentenceMemory(): Promise<void> {
+  await saveSentenceMemory({});
+}

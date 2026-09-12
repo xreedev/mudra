@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 import {
   AppHeader,
   Button,
   Card,
+  ConfirmModal,
   EmptyState,
   GlossChips,
   Icon,
@@ -13,6 +14,12 @@ import {
   TextField,
 } from '../components';
 import { SEED_MEMORIES, type MemoryPair } from '../data/mock';
+import {
+  clearSentenceMemory,
+  deleteRememberedSentence,
+  listRememberedSentences,
+  type RememberedSentenceEntry,
+} from '../llm';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -33,6 +40,33 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
   const [composing, setComposing] = useState(false);
   const [glossDraft, setGlossDraft] = useState('');
   const [sentenceDraft, setSentenceDraft] = useState('');
+
+  // Auto-remembered picks from Call/Talk Aloud (sentenceMemory.ts) — a
+  // separate, quiet recall keyed by sign sequence, distinct from the
+  // phrases above that the user has explicitly typed or confirmed.
+  const [signMemory, setSignMemory] = useState<RememberedSentenceEntry[]>([]);
+  const [confirmingClearSignMemory, setConfirmingClearSignMemory] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    listRememberedSentences().then((entries) => {
+      if (!cancelled) setSignMemory(entries);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const deleteSignMemoryEntry = useCallback((key: string) => {
+    setSignMemory((current) => current.filter((entry) => entry.key !== key));
+    deleteRememberedSentence(key).catch(() => undefined);
+  }, []);
+
+  const clearSignMemory = useCallback(() => {
+    setSignMemory([]);
+    setConfirmingClearSignMemory(false);
+    clearSentenceMemory().catch(() => undefined);
+  }, []);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toUpperCase();
@@ -157,6 +191,68 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
             />
           )
         }
+        ListFooterComponent={
+          signMemory.length > 0 ? (
+            <View style={{ gap: theme.spacing.md, marginTop: theme.spacing.xl }}>
+              <View style={styles.signMemoryHeader}>
+                <View>
+                  <Text variant="label" tone="muted">
+                    SIGN MEMORY
+                  </Text>
+                  <Text
+                    variant="caption"
+                    tone="muted"
+                    style={{ marginTop: theme.spacing.xs / 2, maxWidth: 260 }}
+                  >
+                    Sentences remembered per sign sequence from Call and Talk Aloud.
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear sign memory"
+                  onPress={() => setConfirmingClearSignMemory(true)}
+                  hitSlop={6}
+                  style={styles.clearAllAction}
+                >
+                  <Text variant="caption" tone="danger">
+                    Clear all
+                  </Text>
+                </Pressable>
+              </View>
+
+              {signMemory.map((entry) => (
+                <Card key={entry.key} tone="flat">
+                  <View style={styles.signMemoryRow}>
+                    <View style={[styles.signMemoryText, { gap: theme.spacing.xs }]}>
+                      <GlossChips tokens={entry.tokens} size="sm" />
+                      <Text variant="body">{entry.sentence}</Text>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Forget "${entry.sentence}"`}
+                      onPress={() => deleteSignMemoryEntry(entry.key)}
+                      hitSlop={6}
+                      style={[styles.rowAction, { minHeight: HIT_SLOP_SIZE }]}
+                    >
+                      <Icon name="trash" size={16} color={theme.colors.textMuted} />
+                    </Pressable>
+                  </View>
+                </Card>
+              ))}
+            </View>
+          ) : null
+        }
+      />
+
+      <ConfirmModal
+        visible={confirmingClearSignMemory}
+        title="Clear sign memory?"
+        message={`This forgets all ${signMemory.length} remembered sentence${signMemory.length === 1 ? '' : 's'}. Call and Talk Aloud will fall back to fresh LLM readings.`}
+        confirmLabel="Clear all"
+        confirmVariant="danger"
+        cancelLabel="Cancel"
+        onConfirm={clearSignMemory}
+        onCancel={() => setConfirmingClearSignMemory(false)}
       />
     </Screen>
   );
@@ -233,4 +329,8 @@ const styles = StyleSheet.create({
   rowMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   rowActions: { flexDirection: 'row', alignItems: 'center' },
   rowAction: { flexDirection: 'row', alignItems: 'center' },
+  signMemoryHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
+  clearAllAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
+  signMemoryRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  signMemoryText: { flex: 1 },
 });
