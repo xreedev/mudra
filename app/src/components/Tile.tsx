@@ -65,7 +65,9 @@ export function Tile({ title, description, icon, onPress, featured = false, meta
       </Text>
       <Text
         variant="caption"
-        style={[styles.description, { color: mutedForeground, opacity: featured ? 0.9 : 1 }]}
+        style={[
+          { color: mutedForeground, opacity: featured ? 0.9 : 1, marginVertical: theme.spacing.xs / 2 },
+        ]}
       >
         {description}
       </Text>
@@ -86,5 +88,4 @@ const styles = StyleSheet.create({
   },
   chip: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   spacer: { flex: 1, minHeight: 12 },
-  description: { marginTop: 2, marginBottom: 2 },
 });

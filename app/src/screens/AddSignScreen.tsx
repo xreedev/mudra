@@ -284,7 +284,18 @@ export function AddSignScreen(_: ScreenProps<'AddSign'>) {
           )}
 
           {captured ? (
-            <View style={styles.frameBadge}>
+            <View
+              style={[
+                styles.frameBadge,
+                {
+                  top: theme.spacing.md,
+                  left: theme.spacing.md,
+                  gap: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                },
+              ]}
+            >
               <Icon name="check" size={14} color="#FFFFFF" />
               <Text variant="caption" style={styles.onDark}>
                 Captured
@@ -320,7 +331,7 @@ export function AddSignScreen(_: ScreenProps<'AddSign'>) {
               </Text>
             ) : null}
 
-            <View style={styles.actions}>
+            <View style={[styles.actions, { gap: theme.spacing.md }]}>
               <Button label="Retake" variant="secondary" icon="close" onPress={retake} disabled={saving} />
               <Button
                 label="Save sign"
@@ -396,11 +407,12 @@ export function AddSignScreen(_: ScreenProps<'AddSign'>) {
  * icon when there's no real camera to snapshot from (e.g. `capture()` returned `null`).
  */
 function CapturedPlaceholder({ uri }: { uri: string | null }) {
+  const theme = useTheme();
   if (uri) {
     return <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />;
   }
   return (
-    <View style={styles.placeholder}>
+    <View style={[styles.placeholder, { gap: theme.spacing.sm }]}>
       <Icon name="sign" size={28} color="rgba(255,255,255,0.6)" />
       <Text variant="caption" style={[styles.onDark, styles.dim]}>
         Sign captured
@@ -419,24 +431,18 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   },
   guideWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   frameBadge: {
     position: 'absolute',
-    top: 12,
-    left: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.5)',
   },
   onDark: { color: '#FFFFFF' },
   dim: { opacity: 0.7 },
-  actions: { flexDirection: 'row', gap: 12 },
+  actions: { flexDirection: 'row' },
   grow: { flex: 1 },
   signRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   signsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

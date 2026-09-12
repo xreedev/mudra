@@ -84,7 +84,7 @@ export function Button({
       {busy ? (
         <ActivityIndicator color={foreground} size="small" />
       ) : (
-        <View style={styles.content}>
+        <View style={[styles.content, { gap: theme.spacing.sm }]}>
           {icon ? <Icon name={icon} size={18} color={foreground} /> : null}
           <Text variant="bodyStrong" style={{ color: foreground }}>
             {label}
@@ -104,6 +104,5 @@ const styles = StyleSheet.create({
   content: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
   },
 });

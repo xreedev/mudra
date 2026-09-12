@@ -16,7 +16,7 @@ import {
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
-import { useTheme } from '../theme';
+import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
@@ -189,7 +189,12 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             <SignGuideCircle active={handDetected} size={GUIDE_SIZE} onComplete={handleGuideComplete} />
           </View>
 
-          <View style={[styles.callBar, { paddingHorizontal: theme.spacing.lg }]}>
+          <View
+            style={[
+              styles.callBar,
+              { paddingHorizontal: theme.spacing.lg, gap: theme.spacing.md, paddingVertical: theme.spacing.sm },
+            ]}
+          >
             <IconButton
               name="chevron-left"
               accessibilityLabel="End and go back"
@@ -205,7 +210,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 Connected · 00:42
               </Text>
             </View>
-            <View style={styles.liveBadge}>
+            <View
+              style={[
+                styles.liveBadge,
+                {
+                  gap: theme.spacing.xs,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                },
+              ]}
+            >
               <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
               <Text variant="caption" style={styles.onDark}>
                 LIVE
@@ -220,14 +234,28 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             />
           </View>
 
-          <View style={[styles.pillRow, { paddingHorizontal: theme.spacing.lg }]}>
-            <View style={styles.pill}>
+          <View
+            style={[
+              styles.pillRow,
+              { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+            ]}
+          >
+            <View style={[styles.pill, { paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs }]}>
               <Text variant="caption" style={styles.onDark}>
                 Signing · {templates.length} templates on device
               </Text>
             </View>
             {llm.status !== 'ready' ? (
-              <View style={[styles.pill, { marginLeft: theme.spacing.sm }]}>
+              <View
+                style={[
+                  styles.pill,
+                  {
+                    marginLeft: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                  },
+                ]}
+              >
                 <Text variant="caption" style={styles.onDark}>
                   {llm.status === 'loading' && 'Loading on-device LLM…'}
                   {llm.status === 'checking' && 'Checking for on-device model…'}
@@ -246,18 +274,21 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               {
                 paddingHorizontal: theme.spacing.lg,
                 paddingTop: theme.spacing.xl,
+                paddingBottom: theme.spacing.sm,
                 borderTopLeftRadius: theme.radius['2xl'],
                 borderTopRightRadius: theme.radius['2xl'],
                 gap: theme.spacing.md,
               },
             ]}
           >
-            <View style={{ gap: theme.spacing.sm }}>
-              <Text variant="label" style={[styles.onDark, styles.dim]}>
-                RECOGNIZED
-              </Text>
-              <GlossBubbles tokens={recognized} />
-            </View>
+            {recognized.length > 0 ? (
+              <View style={{ gap: theme.spacing.xs }}>
+                <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                  RECOGNIZED
+                </Text>
+                <GlossBubbles tokens={recognized} />
+              </View>
+            ) : null}
 
             <View
               style={[
@@ -280,7 +311,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 // readings and the person picks the one matching their
                 // actual situation. Same confirmation-gate idea as the rest
                 // of the app: the LLM proposes, the human confirms.
-                <View style={{ gap: 6, marginTop: theme.spacing.md }}>
+                <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.md }}>
                   <Text variant="label" style={[styles.onDark, styles.dim]}>
                     WHO'S SPEAKING? PICK ONE
                   </Text>
@@ -289,6 +320,8 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                     return (
                       <Pressable
                         key={`${option}-${index}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
                         onPress={() => setDraft(option)}
                         style={[
                           styles.optionRow,
@@ -296,12 +329,20 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                             borderRadius: theme.radius.md,
                             borderColor: selected ? theme.colors.accent : 'rgba(255,255,255,0.25)',
                             backgroundColor: selected ? theme.colors.accentSoft : 'transparent',
+                            gap: theme.spacing.sm,
+                            paddingHorizontal: theme.spacing.md,
+                            paddingVertical: theme.spacing.sm,
                           },
                         ]}
                       >
+                        {selected ? (
+                          <Icon name="check" size={16} color={theme.colors.accent} />
+                        ) : (
+                          <View style={styles.optionCheckSpacer} />
+                        )}
                         <Text
                           variant="body"
-                          style={selected ? undefined : styles.onDark}
+                          style={[styles.optionText, selected ? undefined : styles.onDark]}
                           tone={selected ? 'accent' : undefined}
                         >
                           {option}
@@ -312,13 +353,21 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 </View>
               ) : null}
 
-              <View style={[styles.draftActions, { marginTop: theme.spacing.md }]}>
+              <View
+                style={[
+                  styles.draftActions,
+                  { marginTop: theme.spacing.md, gap: theme.spacing.sm },
+                ]}
+              >
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Reset draft"
                   onPress={() => {
                     setDraft(DEMO_DRAFT);
                     setDraftOptions([]);
                   }}
-                  hitSlop={8}
+                  hitSlop={6}
+                  style={styles.textAction}
                 >
                   <Text variant="caption" tone="accent">
                     Reset
@@ -328,11 +377,14 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   ·
                 </Text>
                 <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear draft"
                   onPress={() => {
                     setDraft('');
                     setDraftOptions([]);
                   }}
-                  hitSlop={8}
+                  hitSlop={6}
+                  style={styles.textAction}
                 >
                   <Text variant="caption" tone="accent">
                     Clear
@@ -350,10 +402,11 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               onPress={() => undefined}
             />
 
-            <View style={styles.controls}>
+            <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
               <IconButton
-                name="mic-off"
+                name={muted ? 'mic-off' : 'mic'}
                 accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+                selected={muted}
                 variant={muted ? 'accent' : 'translucent'}
                 size={52}
                 onPress={() => setMuted(!muted)}
@@ -403,6 +456,7 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
             style={({ pressed }) => [
               styles.contactRow,
               {
+                gap: theme.spacing.md,
                 backgroundColor: theme.colors.surfaceRaised,
                 borderColor: theme.colors.border,
                 borderRadius: theme.radius.lg,
@@ -419,7 +473,7 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
             >
               <Text variant="bodyStrong">{entry.name.slice(0, 1)}</Text>
             </View>
-            <View style={styles.contactText}>
+            <View style={[styles.contactText, { gap: theme.spacing.xs / 2 }]}>
               <Text variant="bodyStrong">{entry.name}</Text>
               <Text variant="caption" tone="muted">
                 {entry.detail}
@@ -442,6 +496,7 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
             style={({ pressed }) => [
               styles.contactRow,
               {
+                gap: theme.spacing.md,
                 marginTop: theme.spacing.sm,
                 backgroundColor: theme.colors.dangerSoft,
                 borderColor: theme.colors.danger,
@@ -451,7 +506,7 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
               },
             ]}
           >
-            <View style={styles.contactText}>
+            <View style={[styles.contactText, { gap: theme.spacing.xs / 2 }]}>
               <Text variant="bodyStrong" tone="danger">
                 {entry.name}
               </Text>
@@ -485,8 +540,6 @@ const styles = StyleSheet.create({
   callBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
   },
   callBarTitle: { flex: 1 },
   onDark: { color: '#FFFFFF' },
@@ -494,9 +547,6 @@ const styles = StyleSheet.create({
   liveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
@@ -504,10 +554,8 @@ const styles = StyleSheet.create({
   /** Everything floats over the full-bleed camera: call bar pinned top, chrome
    *  pinned bottom, the middle left empty so the live preview stays visible. */
   overlay: { flex: 1, justifyContent: 'flex-start' },
-  pillRow: { flexDirection: 'row', marginTop: 10 },
+  pillRow: { flexDirection: 'row' },
   pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
@@ -517,24 +565,25 @@ const styles = StyleSheet.create({
    *  same reason every real video-call UI (FaceTime, WhatsApp) scrims its
    *  overlay chrome rather than relying on per-element panels. Still shows
    *  the camera through it, unlike the old opaque bottom sheet. */
-  chrome: { paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)' },
+  chrome: { backgroundColor: 'rgba(0,0,0,0.4)' },
   /** A slightly darker panel just for the draft text, so the sentence that's
    *  about to be spoken reads as the clear focal point of the chrome. */
   draftPanel: { backgroundColor: 'rgba(0,0,0,0.35)' },
-  draftActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  optionRow: { borderWidth: StyleSheet.hairlineWidth * 2, paddingHorizontal: 12, paddingVertical: 8 },
+  draftActions: { flexDirection: 'row', alignItems: 'center' },
+  textAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
+  optionRow: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth * 2 },
+  optionCheckSpacer: { width: 16 },
+  optionText: { flex: 1 },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 28,
   },
   contactRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   avatar: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  contactText: { flex: 1, gap: 2 },
+  contactText: { flex: 1 },
 });

@@ -18,7 +18,7 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   return (
     <Screen scroll>
       <View style={{ paddingTop: theme.spacing['2xl'], paddingBottom: theme.spacing['2xl'] }}>
-        <View style={styles.brandRow}>
+        <View style={[styles.brandRow, { gap: theme.spacing.sm }]}>
           <View
             style={[
               styles.mark,
@@ -85,6 +85,7 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
         style={[
           styles.footer,
           {
+            gap: theme.spacing.sm,
             marginTop: theme.spacing['2xl'],
             borderColor: theme.colors.border,
             borderRadius: theme.radius.lg,
@@ -103,14 +104,13 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
 }
 
 const styles = StyleSheet.create({
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brandRow: { flexDirection: 'row', alignItems: 'center' },
   mark: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   grid: {},
   row: { flexDirection: 'row' },
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   footerText: { flex: 1 },
