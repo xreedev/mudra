@@ -1,24 +1,26 @@
 import { LOCAL_WHISPER_MODEL_ASSET, LocalWhisperTranscriber } from '../src/speech/LocalWhisperTranscriber';
 import { initWhisper } from 'whisper.rn';
-import { RealtimeTranscriber } from 'whisper.rn/realtime-transcription';
-import { AudioPcmStreamAdapter } from 'whisper.rn/realtime-transcription/adapters';
 
+// Mocked by the same specifiers LocalWhisperTranscriber.ts itself loads via require() (see the
+// comment there for why they're relative paths into node_modules, and why require() rather than
+// import — jest.mock resolves either form to the same physical file, so these intercept the
+// source's real dependency without needing `virtual: true` the way the bare `whisper.rn` mock
+// below does, for a subpath the installed package doesn't resolve on its own).
 jest.mock('whisper.rn', () => ({ initWhisper: jest.fn() }), { virtual: true });
+jest.mock('../node_modules/whisper.rn/src/realtime-transcription', () => ({
+  RealtimeTranscriber: jest.fn(),
+}));
 jest.mock(
-  'whisper.rn/realtime-transcription',
-  () => ({ RealtimeTranscriber: jest.fn() }),
-  { virtual: true },
-);
-jest.mock(
-  'whisper.rn/realtime-transcription/adapters',
+  '../node_modules/whisper.rn/src/realtime-transcription/adapters/AudioPcmStreamAdapter',
   () => ({ AudioPcmStreamAdapter: jest.fn() }),
-  { virtual: true },
 );
 jest.mock('react-native-fs', () => ({}));
 
 const mockInitWhisper = initWhisper as jest.Mock;
-const mockRealtimeTranscriber = RealtimeTranscriber as jest.Mock;
-const mockAudioAdapter = AudioPcmStreamAdapter as jest.Mock;
+const mockRealtimeTranscriber = require('../node_modules/whisper.rn/src/realtime-transcription')
+  .RealtimeTranscriber as jest.Mock;
+const mockAudioAdapter = require('../node_modules/whisper.rn/src/realtime-transcription/adapters/AudioPcmStreamAdapter')
+  .AudioPcmStreamAdapter as jest.Mock;
 
 describe('LocalWhisperTranscriber', () => {
   beforeEach(() => {

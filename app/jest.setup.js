@@ -37,6 +37,16 @@ jest.mock('react-native-fs', () => ({
   writeFile: async () => undefined,
 }));
 
+jest.mock('@fugood/react-native-audio-pcm-stream', () => ({
+  __esModule: true,
+  default: {
+    init: () => undefined,
+    on: () => undefined,
+    start: () => undefined,
+    stop: async () => undefined,
+  },
+}));
+
 jest.mock('react-native-worklets-core', () => {
   const React = require('react');
   return {
