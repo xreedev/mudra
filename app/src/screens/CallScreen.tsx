@@ -15,7 +15,6 @@ import {
 } from '../components';
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import { useLocalLlm } from '../llm/useLocalLlm';
-import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
@@ -65,7 +64,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // Real hand-landmark detection (HandLandmarksFrameProcessorPlugin.kt,
   // wrapping MediaPipe's HandLandmarker) matched against the bundled
   // gesture templates every frame.
-  const { frameProcessor, match, landmarks } = useLiveHandGestures();
+  const { frameProcessor, match, landmarks, templates } = useLiveHandGestures();
   const lastAppendedLabel = useRef<string | null>(null);
   const cameraStageRef = useRef<CameraStageHandle>(null);
 
@@ -224,7 +223,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
           <View style={[styles.pillRow, { paddingHorizontal: theme.spacing.lg }]}>
             <View style={styles.pill}>
               <Text variant="caption" style={styles.onDark}>
-                Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
+                Signing · {templates.length} templates on device
               </Text>
             </View>
             {llm.status !== 'ready' ? (

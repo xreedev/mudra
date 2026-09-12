@@ -9,12 +9,39 @@ jest.mock('react-native-safe-area-context', () => {
   };
 });
 
-jest.mock('react-native-vision-camera', () => ({
-  Camera: {
-    getCameraPermissionStatus: () => 'denied',
-    requestCameraPermission: async () => 'denied',
-    getAvailableCameraDevices: () => [],
-  },
-}));
+jest.mock('react-native-vision-camera', () => {
+  const React = require('react');
+  return {
+    Camera: {
+      getCameraPermissionStatus: () => 'denied',
+      requestCameraPermission: async () => 'denied',
+      getAvailableCameraDevices: () => [],
+    },
+    // No real camera/native plugin host in Jest — CameraStage never gets far
+    // enough (permission is 'denied' above) to actually invoke either of
+    // these, so a trivial passthrough is enough to satisfy the imports.
+    // The real hook's deps array is caller-provided, so eslint can't
+    // statically verify it here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useFrameProcessor: (worklet, deps) => React.useCallback(worklet, deps),
+    VisionCameraProxy: { initFrameProcessorPlugin: () => null },
+  };
+});
 
 jest.mock('react-native-screens', () => require('react-native-screens/mock'));
+
+jest.mock('react-native-fs', () => ({
+  DocumentDirectoryPath: '/mock-documents',
+  exists: async () => false,
+  readFile: async () => '{}',
+  writeFile: async () => undefined,
+}));
+
+jest.mock('react-native-worklets-core', () => {
+  const React = require('react');
+  return {
+    // Same caller-provided-deps situation as useFrameProcessor above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useRunOnJS: (callback, deps) => React.useCallback((...args) => Promise.resolve(callback(...args)), deps),
+  };
+});
