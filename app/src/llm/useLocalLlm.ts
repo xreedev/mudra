@@ -107,9 +107,9 @@ export interface LocalLlm {
   /** ["WHERE","HOSPITAL"] -> "Where is the hospital?" — undefined until
    *  status is 'ready'; throws if called before then. */
   composeSentence: (gloss: string[]) => Promise<string>;
-  /** Same glosses -> 3 DIFFERENT candidate sentences, for when the glosses
+  /** Same glosses -> 2 DIFFERENT candidate sentences, for when the glosses
    *  are genuinely ambiguous about who is signing (customer vs. driver) —
-   *  see GLOSS_TO_TEXT_OPTIONS_SYSTEM in prompts.ts. The UI shows all 3 and
+   *  see GLOSS_TO_TEXT_OPTIONS_SYSTEM in prompts.ts. The UI shows both and
    *  the user picks the one matching their actual situation, rather than
    *  the LLM silently guessing which role applies. */
   composeSentenceOptions: (gloss: string[]) => Promise<string[]>;

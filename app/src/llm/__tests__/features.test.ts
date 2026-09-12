@@ -5,6 +5,7 @@ import {
   glossToTextOptions,
   parseReplies,
   smartReplies,
+  withRememberedSentence,
   type ConversationTurn,
 } from '..';
 import type { LlmProvider } from '../LlmProvider';
@@ -32,7 +33,7 @@ describe('glossToText', () => {
 });
 
 describe('glossToTextOptions', () => {
-  it('parses 3 candidate sentences from a clean JSON array', async () => {
+  it('parses candidate sentences from a clean JSON array, capped at 2', async () => {
     const llm = fakeLlm(
       JSON.stringify([
         'Have you arrived home, right or left?',
@@ -41,7 +42,7 @@ describe('glossToTextOptions', () => {
       ]),
     );
     const options = await glossToTextOptions(llm, ['ARRIVED', 'HOME', 'RIGHT', 'LEFT']);
-    expect(options).toHaveLength(3);
+    expect(options).toHaveLength(2);
     expect(options[0]).toBe('Have you arrived home, right or left?');
   });
 
@@ -49,6 +50,33 @@ describe('glossToTextOptions', () => {
     const llm = fakeLlm('["Where is your home?"]["Which way to your home?"]');
     const options = await glossToTextOptions(llm, ['WHERE', 'HOME']);
     expect(options).toEqual(['Where is your home?', 'Which way to your home?']);
+  });
+});
+
+describe('withRememberedSentence', () => {
+  it('returns the LLM options unchanged when nothing is remembered', () => {
+    expect(withRememberedSentence(undefined, ['A', 'B'])).toEqual(['A', 'B']);
+  });
+
+  it('puts the remembered sentence first, ahead of the LLM options', () => {
+    expect(withRememberedSentence('Remembered pick', ['A', 'B'])).toEqual([
+      'Remembered pick',
+      'A',
+      'B',
+    ]);
+  });
+
+  it('drops an LLM option that exactly matches the remembered pick instead of duplicating it', () => {
+    expect(withRememberedSentence('Where is your home?', ['Where is your home?', 'Where am I delivering to?'])).toEqual(
+      ['Where is your home?', 'Where am I delivering to?'],
+    );
+  });
+
+  it('matches case- and whitespace-insensitively', () => {
+    expect(withRememberedSentence('where is your home?', ['  Where is your home?  ', 'Other'])).toEqual([
+      'where is your home?',
+      'Other',
+    ]);
   });
 });
 

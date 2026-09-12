@@ -13,6 +13,7 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT } from '../data/mock';
+import { getRememberedSentence, rememberSentenceChoice, withRememberedSentence } from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
@@ -44,7 +45,8 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Up to 3 candidate readings for the current draft, same ambiguity the call screen resolves by
+  // Candidate readings for the current draft: a remembered pick for this exact sign sequence (if
+  // any) leads, then up to 2 fresh LLM readings — same ambiguity the call screen resolves by
   // letting the person pick — here, picking one also speaks it.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
@@ -81,6 +83,17 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     [speaker],
   );
 
+  // Speaking a sentence out of the candidate list IS the confirmation
+  // gate here (see the screen doc comment) — so that tap is also the
+  // moment the pick is remembered for this exact sign sequence.
+  const speakAndRemember = useCallback(
+    (text: string) => {
+      speak(text);
+      rememberSentenceChoice(recognized, text).catch(() => undefined);
+    },
+    [speak, recognized],
+  );
+
   const handleGuideComplete = useCallback(() => {
     cameraStageRef.current?.capture();
     if (!zonedMatch?.isKnown || zonedMatch.label === lastAppendedLabel.current) return;
@@ -88,26 +101,33 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     lastAppendedLabel.current = zonedMatch.label;
     setRecognized((prev) => {
       const updated = [...prev, zonedMatch.label];
+      const requestId = ++composeRequestId.current;
 
-      if (llm.status === 'ready') {
-        const requestId = ++composeRequestId.current;
-        llm
-          .composeSentenceOptions(updated)
-          .then((options) => {
+      (async () => {
+        // Independent of the LLM: has the user picked a sentence for this
+        // EXACT sign sequence before? If so it always leads the list.
+        const remembered = await getRememberedSentence(updated).catch(() => undefined);
+        if (composeRequestId.current !== requestId) return;
+
+        if (llm.status === 'ready') {
+          try {
+            const options = await llm.composeSentenceOptions(updated);
             if (composeRequestId.current !== requestId) return;
-            setDraftOptions(options);
-            setDraft(options[0] ?? updated.join(' '));
-          })
-          .catch(() => {
-            if (composeRequestId.current === requestId) {
-              setDraftOptions([]);
-              setDraft(updated.join(' '));
-            }
-          });
-      } else {
-        setDraftOptions([]);
-        setDraft(updated.join(' '));
-      }
+            const merged = withRememberedSentence(remembered, options);
+            setDraftOptions(merged);
+            setDraft(merged[0] ?? updated.join(' '));
+          } catch {
+            if (composeRequestId.current !== requestId) return;
+            const merged = withRememberedSentence(remembered, []);
+            setDraftOptions(merged);
+            setDraft(merged[0] ?? updated.join(' '));
+          }
+        } else {
+          const merged = withRememberedSentence(remembered, []);
+          setDraftOptions(merged);
+          setDraft(merged[0] ?? updated.join(' '));
+        }
+      })();
 
       return updated;
     });
@@ -249,7 +269,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                     key={`${sentence}-${index}`}
                     accessibilityRole="button"
                     accessibilityLabel={speaking ? `Stop speaking: ${sentence}` : `Speak: ${sentence}`}
-                    onPress={() => (speaking ? speaker.stop() : speak(sentence))}
+                    onPress={() => (speaking ? speaker.stop() : speakAndRemember(sentence))}
                     style={[
                       styles.optionRow,
                       {
@@ -275,7 +295,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                       accessibilityLabel={speaking ? 'Stop' : 'Speak this sentence'}
                       variant={speaking ? 'accent' : 'translucent'}
                       size={36}
-                      onPress={() => (speaking ? speaker.stop() : speak(sentence))}
+                      onPress={() => (speaking ? speaker.stop() : speakAndRemember(sentence))}
                     />
                   </Pressable>
                 );
@@ -330,7 +350,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               size="lg"
               block
               disabled={draft.trim().length === 0}
-              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speak(draft))}
+              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speakAndRemember(draft))}
             />
 
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
