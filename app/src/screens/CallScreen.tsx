@@ -55,7 +55,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [draft, setDraft] = useState(DEMO_DRAFT);
   // Candidate readings for the current draft: a remembered pick for this
   // exact sign sequence (if the user has confirmed one before) leads, then
-  // up to 2 fresh LLM readings — genuinely different interpretations (e.g.
+  // 2 or 3 fresh LLM readings — genuinely different interpretations (e.g.
   // "you" the driver vs "I" the driver), not rewordings of the same
   // meaning, since the glosses alone can't say which role the signer has.
   // `draft` is always one of these (or the raw gloss fallback when nothing
@@ -116,7 +116,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // the effect further down, to backfill LLM options for the CURRENT
   // sequence once the model finishes loading (it's often still "loading"
   // partway through a sign sequence — never blocking signing on it means
-  // the LLM's 2 readings can otherwise never appear for that sequence).
+  // the LLM's readings can otherwise never appear for that sequence).
   const composeForSequence = useCallback(
     (sequence: string[]) => {
       const requestId = ++composeRequestId.current;
@@ -193,7 +193,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // Signing doesn't wait for the LLM (composeForSequence above always shows
   // SOMETHING immediately), so a sequence recognized while the model was
   // still loading only ever shows its remembered pick, if any — with no
-  // later nudge, the LLM's 2 readings would just never appear for that
+  // later nudge, the LLM's readings would just never appear for that
   // sequence. Once the model finishes loading, recompute for whatever is
   // still the current sequence so those readings can join it.
   useEffect(() => {

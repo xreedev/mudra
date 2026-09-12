@@ -34,7 +34,7 @@ describe('glossToText', () => {
 });
 
 describe('glossToTextOptions', () => {
-  it('parses candidate sentences from a clean JSON array, capped at 2', async () => {
+  it('parses up to 3 candidate sentences from a clean JSON array — the LLM decides 2 vs 3, not a hard cap', async () => {
     const llm = fakeLlm(
       JSON.stringify([
         'Have you arrived home, right or left?',
@@ -43,7 +43,7 @@ describe('glossToTextOptions', () => {
       ]),
     );
     const options = await glossToTextOptions(llm, ['ARRIVED', 'HOME', 'RIGHT', 'LEFT']);
-    expect(options).toHaveLength(2);
+    expect(options).toHaveLength(3);
     expect(options[0]).toBe('Have you arrived home, right or left?');
   });
 

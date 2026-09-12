@@ -40,12 +40,14 @@ export async function glossToText(llm: LlmProvider, gloss: string[]): Promise<st
 }
 
 /**
- * ["ARRIVED","HOME","RIGHT","LEFT"] -> 2 different candidate sentences,
+ * ["ARRIVED","HOME","RIGHT","LEFT"] -> 2 or 3 different candidate sentences,
  * covering different plausible readings of who is signing (the customer or
  * the driver) — see GLOSS_TO_TEXT_OPTIONS_SYSTEM for why a single guess
- * isn't good enough here. Higher temperature than glossToText (0.2 -> 0.6)
- * specifically to encourage the 2 options to genuinely diverge rather than
- * be near-identical rewordings; falls back to parseReplies' same tolerant
+ * isn't good enough here, and for why the LLM decides 2 vs 3 itself rather
+ * than being forced to a fixed count (a padded, invented 3rd option is worse
+ * than 2 solid ones). Higher temperature than glossToText (0.2 -> 0.6)
+ * specifically to encourage the options to genuinely diverge rather than be
+ * near-identical rewordings; falls back to parseReplies' same tolerant
  * JSON-array recovery already proven on-device for smartReplies.
  */
 export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Promise<string[]> {
@@ -53,7 +55,7 @@ export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Pro
     maxTokens: 150,
     temperature: 0.6,
   });
-  return parseReplies(raw, 2);
+  return parseReplies(raw);
 }
 
 /** Word-for-word equal, ignoring surrounding whitespace and case — the same

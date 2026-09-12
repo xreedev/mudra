@@ -87,7 +87,7 @@ export function buildGlossUserPrompt(gloss: string[]): string {
 }
 
 /**
- * gloss tokens → 2 DIFFERENT candidate sentences, for when the glosses are
+ * gloss tokens → 2 or 3 DIFFERENT candidate sentences, for when the glosses are
  * genuinely ambiguous about WHO is signing. "ARRIVED HOME RIGHT LEFT" reads
  * one way if the signer is the customer asking the driver ("Have you
  * arrived home, right or left?") and a completely different way if the
@@ -108,10 +108,13 @@ export const GLOSS_TO_TEXT_OPTIONS_SYSTEM = [
   'the delivery, reporting their own status/location) — the exact same',
   'glosses can mean opposite things depending on which one is signing.',
   'Produce candidate sentences for the same glosses, covering different',
-  'plausible readings of who is signing and what they mean — one as the',
-  'customer speaking to the driver, and one as the driver speaking to the',
-  'customer. Give exactly 2 options, the two most plausible readings — never',
-  'pad or invent a weaker variant just to add a third.',
+  'plausible readings of who is signing and what they mean — typically one',
+  'as the customer speaking to the driver, and one as the driver speaking',
+  'to the customer. Give 2 options when those are the only two genuinely',
+  'different readings, or 3 only if a third one is ALSO genuinely different',
+  '(a different statement/question framing, not just different wording).',
+  'Never pad the list with an awkward or invented third option just to',
+  'reach 3 — 2 solid options are better than 3 where one is forced.',
   'The signer is always one of the two PEOPLE on the call (the customer or',
   'the driver) — never write a sentence where "the delivery" or "the',
   'package" is the one speaking or arriving, as if narrating from outside',
@@ -128,7 +131,7 @@ export const GLOSS_TO_TEXT_OPTIONS_SYSTEM = [
   '  state ("is home").',
   '- Never invent street names, distances, numbers, or landmarks not in the',
   '  glosses.',
-  'Return ONLY a JSON array of exactly 2 strings, nothing else — no notes, no',
+  'Return ONLY a JSON array of 2 or 3 strings, nothing else — no notes, no',
   'numbering, no explanation of which reading is which.',
 ].join(' ');
 

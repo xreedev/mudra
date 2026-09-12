@@ -52,7 +52,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
   // Candidate readings for the current draft: a remembered pick for this exact sign sequence (if
-  // any) leads, then up to 2 fresh LLM readings — same ambiguity the call screen resolves by
+  // any) leads, then 2 or 3 fresh LLM readings — same ambiguity the call screen resolves by
   // letting the person pick — here, picking one also speaks it.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
   // The remembered pick for the current sign sequence, if any — kept
@@ -118,7 +118,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   // the effect further down, to backfill LLM options for the CURRENT
   // sequence once the model finishes loading (it's often still "loading"
   // partway through a sign sequence — never blocking signing on it means
-  // the LLM's 2 readings can otherwise never appear for that sequence).
+  // the LLM's readings can otherwise never appear for that sequence).
   const composeForSequence = useCallback(
     (sequence: string[]) => {
       const requestId = ++composeRequestId.current;
@@ -184,7 +184,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   // Signing doesn't wait for the LLM (composeForSequence above always shows
   // SOMETHING immediately), so a sequence recognized while the model was
   // still loading only ever shows its remembered pick, if any — with no
-  // later nudge, the LLM's 2 readings would just never appear for that
+  // later nudge, the LLM's readings would just never appear for that
   // sequence. Once the model finishes loading, recompute for whatever is
   // still the current sequence so those readings can join it.
   useEffect(() => {
