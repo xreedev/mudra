@@ -19,10 +19,15 @@ interface TranscriptEntry {
  *
  * The other half of the same-WiFi ASL relay (see `asl-relay-rn`): this phone — typically the
  * hearing person's — advertises itself on the local network, speaks aloud whatever Call Someone
- * or Talk Aloud sends it from the signer's phone, and can talk back: holding "Talk back"
- * transcribes this phone's own microphone locally (`LocalWhisperTranscriber`, same on-device
- * Whisper used elsewhere in the app) and relays the resulting sentence back over the same
- * connection, where it shows up as a caption over the signer's camera view.
+ * or Talk Aloud sends it from the signer's phone, and can talk back — transcribed locally
+ * (`LocalWhisperTranscriber`, same on-device Whisper used elsewhere in the app) and relayed back
+ * over the same connection, where it shows up as a caption over the signer's camera view.
+ *
+ * The mic works the way a real phone call's does: it's just always listening for as long as
+ * you're on this screen, not something you press to talk into — the same reason Call Someone's
+ * camera is always live rather than needing a "start signing" button. Mute silences BOTH
+ * directions at once, same as stepping away from a real call: your mic stops listening and
+ * incoming messages stop being spoken aloud (still logged either way, so nothing's lost).
  *
  * Styled as a call screen rather than a plain message list: for the hearing person holding this
  * phone, this IS the call — there's just no live audio stream, only text passing each way. Same
@@ -33,19 +38,12 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [muted, setMuted] = useState(false);
+  const [micActive, setMicActive] = useState(false);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
-  const [talking, setTalking] = useState(false);
   const speaker = useRef(new LocalSpeaker()).current;
   const whisper = useRef(new LocalWhisperTranscriber()).current;
-
-  useEffect(() => {
-    return () => {
-      speaker.stop();
-      whisper.stop().catch(() => undefined);
-    };
-  }, [speaker, whisper]);
 
   const handleMessage = useCallback(
     (text: string) => {
@@ -60,28 +58,48 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
 
   const relay = useAslRelayReceiver(handleMessage);
 
-  const startTalking = useCallback(async () => {
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) return;
+  // Starts listening the moment the call isn't muted, and keeps listening for as long as it
+  // isn't — no press-to-talk, same as the mic on a real call. Re-runs whenever `muted` flips.
+  useEffect(() => {
+    if (muted) {
+      whisper.stop().catch(() => undefined);
+      return;
     }
-    try {
-      await whisper.start({
-        onTranscript: (text) => {
-          relay.sendText(text);
-          setTranscript((prev) => [{ text, from: 'me' as const }, ...prev].slice(0, 20));
-        },
-        onListeningChange: setTalking,
-        onError: () => setTalking(false),
-      });
-    } catch {
-      setTalking(false);
-    }
-  }, [whisper, relay]);
 
-  const stopTalking = useCallback(() => {
-    whisper.stop().catch(() => undefined);
-  }, [whisper]);
+    let cancelled = false;
+    (async () => {
+      if (Platform.OS === 'android') {
+        const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+        if (cancelled || granted !== PermissionsAndroid.RESULTS.GRANTED) return;
+      }
+      try {
+        await whisper.start({
+          onTranscript: (text) => {
+            relay.sendText(text);
+            setTranscript((prev) => [{ text, from: 'me' as const }, ...prev].slice(0, 20));
+          },
+          onListeningChange: setMicActive,
+          onError: () => setMicActive(false),
+        });
+      } catch {
+        setMicActive(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // relay.sendText is stable for the component's lifetime (see useAslRelayReceiver); only
+    // `muted` should actually restart the mic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [muted, whisper]);
+
+  useEffect(() => {
+    return () => {
+      speaker.stop();
+      whisper.stop().catch(() => undefined);
+    };
+  }, [speaker, whisper]);
 
   // A live "connected" clock for as long as this phone is listening — the same at-a-glance
   // reassurance a phone call's duration gives, even though nothing here is a literal telephone
@@ -99,26 +117,22 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
   const speaking = speakingState === 'speaking';
   const leave = () => {
     speaker.stop();
-    stopTalking();
     navigation.goBack();
   };
 
   // Priority order for the center display: what's happening right now beats what already
-  // happened — actively talking back or hearing a spoken reply outranks the last logged line.
-  const centerLabel = talking
-    ? 'TALKING BACK'
-    : speaking
-      ? 'SPEAKING'
-      : latestEntry
-        ? latestEntry.from === 'me'
-          ? 'YOU SAID'
-          : 'LAST HEARD'
-        : 'WAITING FOR SIGNS';
-  const centerBody = talking
-    ? 'Listening — speak your reply.'
-    : (latestEntry?.text ?? 'Keep this open while the other phone signs to you.');
-  const avatarActive = talking || speaking;
-  const avatarIcon = talking ? 'mic' : speaking ? 'volume' : 'wifi';
+  // happened. The mic being on isn't its own state here — it's just the ambient default, the
+  // same way a real call doesn't announce "microphone active" — so it doesn't crowd this out.
+  const centerLabel = speaking
+    ? 'SPEAKING'
+    : latestEntry
+      ? latestEntry.from === 'me'
+        ? 'YOU SAID'
+        : 'LAST HEARD'
+      : 'WAITING FOR SIGNS';
+  const centerBody = latestEntry?.text ?? 'Keep this open while the other phone signs to you.';
+  const avatarActive = speaking;
+  const avatarIcon = speaking ? 'volume' : 'wifi';
 
   return (
     <Screen dark edgeToEdge>
@@ -175,6 +189,22 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
                 {relay.available
                   ? 'Advertised as "ASL Receiver"'
                   : 'Needs a development build with the relay linked'}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.pill,
+                {
+                  marginLeft: theme.spacing.sm,
+                  gap: theme.spacing.xs / 2,
+                  paddingHorizontal: theme.spacing.sm,
+                  paddingVertical: theme.spacing.xs,
+                },
+              ]}
+            >
+              <Icon name={muted ? 'mic-off' : 'mic'} size={12} color="#FFFFFF" />
+              <Text variant="caption" style={styles.onDark}>
+                {muted ? 'Mic muted' : micActive ? 'Mic listening' : 'Starting mic…'}
               </Text>
             </View>
           </View>
@@ -262,7 +292,7 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
             <View style={[styles.controls, { gap: theme.spacing['2xl'], marginTop: theme.spacing.sm }]}>
               <IconButton
                 name={muted ? 'mic-off' : 'mic'}
-                accessibilityLabel={muted ? 'Unmute incoming speech' : 'Mute incoming speech'}
+                accessibilityLabel={muted ? 'Unmute' : 'Mute'}
                 selected={muted}
                 variant={muted ? 'accent' : 'translucent'}
                 size={52}
@@ -276,14 +306,6 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
                 size={52}
                 disabled={!latestEntry}
                 onPress={() => latestEntry && speaker.speak(latestEntry.text, setSpeakingState)}
-              />
-              <IconButton
-                name={talking ? 'stop' : 'chat'}
-                accessibilityLabel={talking ? 'Stop talking back' : 'Talk back'}
-                selected={talking}
-                variant={talking ? 'danger' : 'translucent'}
-                size={52}
-                onPress={() => (talking ? stopTalking() : startTalking())}
               />
             </View>
           </View>
