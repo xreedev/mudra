@@ -15,10 +15,11 @@ import {
 } from '../components';
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import {
-  getRememberedSentence,
+  getRememberedSentences,
   isSameSentence,
+  MAX_CANDIDATES_PER_SEQUENCE,
   rememberSentenceChoice,
-  withRememberedSentence,
+  withRememberedSentences,
 } from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
@@ -53,20 +54,20 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Candidate readings for the current draft: a remembered pick for this
-  // exact sign sequence (if the user has confirmed one before) leads, then
-  // 2 or 3 fresh LLM readings — genuinely different interpretations (e.g.
-  // "you" the driver vs "I" the driver), not rewordings of the same
-  // meaning, since the glosses alone can't say which role the signer has.
-  // `draft` is always one of these (or the raw gloss fallback when nothing
-  // is remembered and the LLM isn't ready); tapping an option in the UI
-  // below just changes which one `draft` points at.
+  // Candidate readings for the current draft: every sentence remembered for
+  // this exact sign sequence leads (most-recently-picked first — the same
+  // signs can genuinely mean different things on different occasions, so
+  // picking a new one adds to memory rather than replacing it), then LLM
+  // readings fill whatever slots are left, up to MAX_CANDIDATES_PER_SEQUENCE
+  // total. `draft` is always one of these (or the raw gloss fallback when
+  // nothing is remembered and the LLM isn't ready); tapping an option in the
+  // UI below just changes which one `draft` points at.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
-  // The remembered pick for the current sign sequence, if any — kept
-  // separately (rather than re-derived from draftOptions[0]) purely so the
-  // UI can tag whichever option matches it as "From memory", including
+  // The sentences remembered for the current sign sequence, if any — kept
+  // separately (rather than re-derived from draftOptions) purely so the UI
+  // can tag whichever options match one of them as "From memory", including
   // after the user has switched to a different option.
-  const [rememberedSentence, setRememberedSentence] = useState<string | undefined>(undefined);
+  const [rememberedSentences, setRememberedSentences] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
   // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
   // to-edge) screen, so the window size is the skeleton's coordinate space
@@ -107,48 +108,52 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     autoDraftRef.current = DEMO_DRAFT;
     setRecognized([]);
     setDraftOptions([]);
-    setRememberedSentence(undefined);
+    setRememberedSentences([]);
     setDraft(DEMO_DRAFT);
   }, []);
 
-  // The one place a sign sequence's remembered pick + LLM options are looked
-  // up and merged — called both when a new sign completes (below) and, via
-  // the effect further down, to backfill LLM options for the CURRENT
-  // sequence once the model finishes loading (it's often still "loading"
-  // partway through a sign sequence — never blocking signing on it means
-  // the LLM's readings can otherwise never appear for that sequence).
+  // The one place a sign sequence's remembered sentences + LLM options are
+  // looked up and merged — called both when a new sign completes (below)
+  // and, via the effect further down, to backfill LLM options for the
+  // CURRENT sequence once the model finishes loading (it's often still
+  // "loading" partway through a sign sequence — never blocking signing on
+  // it means the LLM's readings can otherwise never appear for that
+  // sequence).
   const composeForSequence = useCallback(
     (sequence: string[]) => {
       const requestId = ++composeRequestId.current;
 
       (async () => {
-        // Independent of the LLM: has the user picked a sentence for this
-        // EXACT sign sequence before? If so it always leads the list.
-        const remembered = await getRememberedSentence(sequence).catch(() => undefined);
+        // Independent of the LLM: every sentence the user has picked for
+        // this EXACT sign sequence before — always leads the list.
+        const remembered = await getRememberedSentences(sequence).catch(() => []);
         if (composeRequestId.current !== requestId) return;
-        setRememberedSentence(remembered);
+        setRememberedSentences(remembered);
 
         let options: string[] = [];
-        if (llm.status === 'ready') {
+        // Memory already fills every slot — skip the LLM call entirely,
+        // there's no room left to show anything it would return.
+        if (remembered.length < MAX_CANDIDATES_PER_SEQUENCE && llm.status === 'ready') {
           // Compose over the WHOLE sequence so far, not just the new word —
           // "WHERE" alone can't become "Where is the hospital?", but
           // "WHERE HOSPITAL" together can.
           try {
             options = await llm.composeSentenceOptions(sequence);
           } catch {
-            // LLM call failed — fall back to the remembered pick (if any)
+            // LLM call failed — fall back to the remembered picks (if any)
             // or the raw gloss sequence, rather than leaving the draft
             // stuck on a stale sentence.
             options = [];
           }
           if (composeRequestId.current !== requestId) return;
         }
-        // else: model not ready (still loading, missing, or errored) —
-        // never block signing on it. Show the remembered pick if there is
-        // one, else the raw glosses; the effect below upgrades this once
-        // the model becomes ready.
+        // else: memory already full, or the model isn't ready (still
+        // loading, missing, or errored) — never block signing on it. Show
+        // whatever's remembered, else the raw glosses; the effect below
+        // upgrades this once the model becomes ready (unless memory is
+        // already full, in which case there's nothing to upgrade).
 
-        const merged = withRememberedSentence(remembered, options);
+        const merged = withRememberedSentences(remembered, options);
         const nextDraft = merged[0] ?? sequence.join(' ');
         setDraftOptions(merged);
         // Only move the draft if it's still pointing at whatever WE set it
@@ -370,7 +375,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
                 {draft}
               </Text>
-              {isSameSentence(draft, rememberedSentence) && draftOptions.length <= 1 ? (
+              {rememberedSentences.some((r) => isSameSentence(draft, r)) && draftOptions.length <= 1 ? (
                 <View
                   style={[
                     styles.memoryTagRow,
@@ -398,7 +403,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   </Text>
                   {draftOptions.map((option, index) => {
                     const selected = option === draft;
-                    const fromMemory = isSameSentence(option, rememberedSentence);
+                    const fromMemory = rememberedSentences.some((r) => isSameSentence(option, r));
                     return (
                       <Pressable
                         key={`${option}-${index}`}

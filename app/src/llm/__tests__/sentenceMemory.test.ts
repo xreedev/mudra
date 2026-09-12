@@ -2,9 +2,10 @@ import RNFS from 'react-native-fs';
 import {
   clearSentenceMemory,
   deleteRememberedSentence,
-  getRememberedSentence,
+  getRememberedSentences,
   glossSequenceKey,
   listRememberedSentences,
+  MAX_CANDIDATES_PER_SEQUENCE,
   rememberSentenceChoice,
   SENTENCE_MEMORY_PATH,
 } from '..';
@@ -55,44 +56,75 @@ describe('glossSequenceKey', () => {
   });
 });
 
-describe('getRememberedSentence', () => {
-  it('returns undefined when nothing has been remembered yet', async () => {
-    expect(await getRememberedSentence(['WHERE', 'HOSPITAL'])).toBeUndefined();
+describe('getRememberedSentences', () => {
+  it('returns [] when nothing has been remembered yet', async () => {
+    expect(await getRememberedSentences(['WHERE', 'HOSPITAL'])).toEqual([]);
   });
 
   it('recovers safely from corrupted JSON instead of throwing', async () => {
     mockFiles.set(SENTENCE_MEMORY_PATH, '{ not valid json');
-    await expect(getRememberedSentence(['WHERE', 'HOSPITAL'])).resolves.toBeUndefined();
+    await expect(getRememberedSentences(['WHERE', 'HOSPITAL'])).resolves.toEqual([]);
   });
 
-  it('returns undefined for an empty gloss sequence', async () => {
-    expect(await getRememberedSentence([])).toBeUndefined();
+  it('returns [] for an empty gloss sequence', async () => {
+    expect(await getRememberedSentences([])).toEqual([]);
+  });
+
+  it('reads an old single-sentence-per-sequence file (schema v1) as a one-item list', async () => {
+    mockFiles.set(
+      SENTENCE_MEMORY_PATH,
+      JSON.stringify({ schema: 'sign-sentence-memory-v1', entries: { 'WHERE HOSPITAL': 'Where is the hospital?' } }),
+    );
+    expect(await getRememberedSentences(['WHERE', 'HOSPITAL'])).toEqual(['Where is the hospital?']);
   });
 });
 
 describe('rememberSentenceChoice', () => {
-  it('round-trips a choice through getRememberedSentence', async () => {
+  it('round-trips a choice through getRememberedSentences', async () => {
     await rememberSentenceChoice(['WHERE', 'HOSPITAL'], 'Where is the hospital?');
-    expect(await getRememberedSentence(['WHERE', 'HOSPITAL'])).toBe('Where is the hospital?');
+    expect(await getRememberedSentences(['WHERE', 'HOSPITAL'])).toEqual(['Where is the hospital?']);
   });
 
   it('is keyed independently per sign sequence', async () => {
     await rememberSentenceChoice(['WHERE', 'HOSPITAL'], 'Where is the hospital?');
     await rememberSentenceChoice(['ME', 'ARRIVED'], 'I have arrived.');
-    expect(await getRememberedSentence(['WHERE', 'HOSPITAL'])).toBe('Where is the hospital?');
-    expect(await getRememberedSentence(['ME', 'ARRIVED'])).toBe('I have arrived.');
+    expect(await getRememberedSentences(['WHERE', 'HOSPITAL'])).toEqual(['Where is the hospital?']);
+    expect(await getRememberedSentences(['ME', 'ARRIVED'])).toEqual(['I have arrived.']);
   });
 
-  it('a later choice for the same sequence replaces the earlier one', async () => {
+  it('a different choice for the same sequence is ADDED, not replaced, most-recent first', async () => {
     await rememberSentenceChoice(['WHERE', 'HOME'], 'Where is your home?');
     await rememberSentenceChoice(['WHERE', 'HOME'], 'Where am I delivering to?');
-    expect(await getRememberedSentence(['WHERE', 'HOME'])).toBe('Where am I delivering to?');
+    expect(await getRememberedSentences(['WHERE', 'HOME'])).toEqual([
+      'Where am I delivering to?',
+      'Where is your home?',
+    ]);
+  });
+
+  it('re-picking an already-remembered sentence bumps it to the front instead of duplicating it', async () => {
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'Where is your home?');
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'Where am I delivering to?');
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'where is your home?'); // same text, different case
+    expect(await getRememberedSentences(['WHERE', 'HOME'])).toEqual([
+      'where is your home?',
+      'Where am I delivering to?',
+    ]);
+  });
+
+  it(`caps stored sentences per sequence at MAX_CANDIDATES_PER_SEQUENCE (${MAX_CANDIDATES_PER_SEQUENCE}), evicting the least-recently-picked one`, async () => {
+    for (let i = 1; i <= MAX_CANDIDATES_PER_SEQUENCE + 1; i++) {
+      await rememberSentenceChoice(['GO'], `Option ${i}`);
+    }
+    const remembered = await getRememberedSentences(['GO']);
+    expect(remembered).toHaveLength(MAX_CANDIDATES_PER_SEQUENCE);
+    expect(remembered[0]).toBe(`Option ${MAX_CANDIDATES_PER_SEQUENCE + 1}`);
+    expect(remembered).not.toContain('Option 1');
   });
 
   it('ignores an empty gloss sequence or blank sentence', async () => {
     await rememberSentenceChoice([], 'Where is your home?');
     await rememberSentenceChoice(['WHERE', 'HOME'], '   ');
-    expect(await getRememberedSentence(['WHERE', 'HOME'])).toBeUndefined();
+    expect(await getRememberedSentences(['WHERE', 'HOME'])).toEqual([]);
   });
 
   it('writes to a temp path and moves it into place, not writing the real path directly', async () => {
@@ -111,29 +143,53 @@ describe('listRememberedSentences', () => {
     expect(await listRememberedSentences()).toEqual([]);
   });
 
-  it('lists every entry with its tokens split back out, sorted by key', async () => {
+  it('lists one row per remembered sentence, tokens split back out, sorted by key', async () => {
     await rememberSentenceChoice(['WHERE', 'HOME'], 'Where is your home?');
     await rememberSentenceChoice(['ME', 'ARRIVED'], 'I have arrived.');
-    expect(await listRememberedSentences()).toEqual([
+    const rows = await listRememberedSentences();
+    expect(rows.map(({ id: _id, ...rest }) => rest)).toEqual([
       { key: 'ME ARRIVED', tokens: ['ME', 'ARRIVED'], sentence: 'I have arrived.' },
       { key: 'WHERE HOME', tokens: ['WHERE', 'HOME'], sentence: 'Where is your home?' },
+    ]);
+  });
+
+  it('lists multiple rows sharing a key when a sequence has more than one remembered sentence', async () => {
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'Where is your home?');
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'Where am I delivering to?');
+    const rows = await listRememberedSentences();
+    expect(rows).toHaveLength(2);
+    expect(rows.every((row) => row.key === 'WHERE HOME')).toBe(true);
+    expect(new Set(rows.map((row) => row.id)).size).toBe(2); // distinct ids
+    expect(rows.map((row) => row.sentence)).toEqual([
+      'Where am I delivering to?',
+      'Where is your home?',
     ]);
   });
 });
 
 describe('deleteRememberedSentence', () => {
-  it('removes one entry, leaving the others', async () => {
+  it('removes one sentence by id, leaving a sibling for the same sequence intact', async () => {
     await rememberSentenceChoice(['WHERE', 'HOME'], 'Where is your home?');
-    await rememberSentenceChoice(['ME', 'ARRIVED'], 'I have arrived.');
-    await deleteRememberedSentence('WHERE HOME');
-    expect(await getRememberedSentence(['WHERE', 'HOME'])).toBeUndefined();
-    expect(await getRememberedSentence(['ME', 'ARRIVED'])).toBe('I have arrived.');
+    await rememberSentenceChoice(['WHERE', 'HOME'], 'Where am I delivering to?');
+    const [first] = await listRememberedSentences();
+    await deleteRememberedSentence(first.id);
+    const remaining = await listRememberedSentences();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0].sentence).not.toBe(first.sentence);
   });
 
-  it('is a no-op for a key that is not remembered', async () => {
+  it('removes the sequence entirely once its last sentence is removed', async () => {
     await rememberSentenceChoice(['ME', 'ARRIVED'], 'I have arrived.');
-    await expect(deleteRememberedSentence('NOT THERE')).resolves.toBeUndefined();
-    expect(await getRememberedSentence(['ME', 'ARRIVED'])).toBe('I have arrived.');
+    const [only] = await listRememberedSentences();
+    await deleteRememberedSentence(only.id);
+    expect(await getRememberedSentences(['ME', 'ARRIVED'])).toEqual([]);
+    expect(await listRememberedSentences()).toEqual([]);
+  });
+
+  it('is a no-op for an id that does not exist', async () => {
+    await rememberSentenceChoice(['ME', 'ARRIVED'], 'I have arrived.');
+    await expect(deleteRememberedSentence('not-a-real-id')).resolves.toBeUndefined();
+    expect(await getRememberedSentences(['ME', 'ARRIVED'])).toEqual(['I have arrived.']);
   });
 });
 

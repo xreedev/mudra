@@ -36,10 +36,10 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
 
   const confirmDelete = useCallback(() => {
     if (!pendingDelete) return;
-    const key = pendingDelete.key;
-    setSignMemory((current) => current.filter((entry) => entry.key !== key));
+    const id = pendingDelete.id;
+    setSignMemory((current) => current.filter((entry) => entry.id !== id));
     setPendingDelete(null);
-    deleteRememberedSentence(key).catch(() => undefined);
+    deleteRememberedSentence(id).catch(() => undefined);
   }, [pendingDelete]);
 
   const clearAll = useCallback(() => {
@@ -72,7 +72,7 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
 
       <FlatList
         data={signMemory}
-        keyExtractor={(item) => item.key}
+        keyExtractor={(item) => item.id}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: theme.spacing['4xl'], gap: theme.spacing.md }}
         renderItem={({ item }) => (

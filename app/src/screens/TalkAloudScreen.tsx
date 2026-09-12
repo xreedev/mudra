@@ -15,10 +15,11 @@ import {
 } from '../components';
 import { DEMO_DRAFT } from '../data/mock';
 import {
-  getRememberedSentence,
+  getRememberedSentences,
   isSameSentence,
+  MAX_CANDIDATES_PER_SEQUENCE,
   rememberSentenceChoice,
-  withRememberedSentence,
+  withRememberedSentences,
 } from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
@@ -51,14 +52,17 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Candidate readings for the current draft: a remembered pick for this exact sign sequence (if
-  // any) leads, then 2 or 3 fresh LLM readings — same ambiguity the call screen resolves by
-  // letting the person pick — here, picking one also speaks it.
+  // Candidate readings for the current draft: every sentence remembered for this exact sign
+  // sequence leads (most-recently-picked first — the same signs can genuinely mean different
+  // things on different occasions, so picking a new one adds to memory rather than replacing
+  // it), then LLM readings fill whatever slots are left, up to MAX_CANDIDATES_PER_SEQUENCE total
+  // — same ambiguity the call screen resolves by letting the person pick; here, picking one also
+  // speaks it.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
-  // The remembered pick for the current sign sequence, if any — kept
-  // separately so the UI can tag whichever displayed sentence matches it
-  // as "From memory".
-  const [rememberedSentence, setRememberedSentence] = useState<string | undefined>(undefined);
+  // The sentences remembered for the current sign sequence, if any — kept
+  // separately so the UI can tag whichever displayed sentence matches one
+  // of them as "From memory".
+  const [rememberedSentences, setRememberedSentences] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
   const [spoken, setSpoken] = useState<string | null>(null);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
@@ -109,29 +113,32 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     autoDraftRef.current = DEMO_DRAFT;
     setRecognized([]);
     setDraftOptions([]);
-    setRememberedSentence(undefined);
+    setRememberedSentences([]);
     setDraft(DEMO_DRAFT);
   }, []);
 
-  // The one place a sign sequence's remembered pick + LLM options are looked
-  // up and merged — called both when a new sign completes (below) and, via
-  // the effect further down, to backfill LLM options for the CURRENT
-  // sequence once the model finishes loading (it's often still "loading"
-  // partway through a sign sequence — never blocking signing on it means
-  // the LLM's readings can otherwise never appear for that sequence).
+  // The one place a sign sequence's remembered sentences + LLM options are
+  // looked up and merged — called both when a new sign completes (below)
+  // and, via the effect further down, to backfill LLM options for the
+  // CURRENT sequence once the model finishes loading (it's often still
+  // "loading" partway through a sign sequence — never blocking signing on
+  // it means the LLM's readings can otherwise never appear for that
+  // sequence).
   const composeForSequence = useCallback(
     (sequence: string[]) => {
       const requestId = ++composeRequestId.current;
 
       (async () => {
-        // Independent of the LLM: has the user picked a sentence for this
-        // EXACT sign sequence before? If so it always leads the list.
-        const remembered = await getRememberedSentence(sequence).catch(() => undefined);
+        // Independent of the LLM: every sentence the user has picked for
+        // this EXACT sign sequence before — always leads the list.
+        const remembered = await getRememberedSentences(sequence).catch(() => []);
         if (composeRequestId.current !== requestId) return;
-        setRememberedSentence(remembered);
+        setRememberedSentences(remembered);
 
         let options: string[] = [];
-        if (llm.status === 'ready') {
+        // Memory already fills every slot — skip the LLM call entirely,
+        // there's no room left to show anything it would return.
+        if (remembered.length < MAX_CANDIDATES_PER_SEQUENCE && llm.status === 'ready') {
           try {
             options = await llm.composeSentenceOptions(sequence);
           } catch {
@@ -139,12 +146,13 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
           }
           if (composeRequestId.current !== requestId) return;
         }
-        // else: model not ready — never block signing on it. Show the
-        // remembered pick if there is one, else the raw glosses; this
-        // function runs again once the model becomes ready (see the effect
-        // below) to add the LLM's readings to whatever is still current.
+        // else: memory already full, or the model isn't ready — never
+        // block signing on it. Show whatever's remembered, else the raw
+        // glosses; this function runs again once the model becomes ready
+        // (see the effect below) to add the LLM's readings to whatever is
+        // still current, unless memory is already full.
 
-        const merged = withRememberedSentence(remembered, options);
+        const merged = withRememberedSentences(remembered, options);
         const nextDraft = merged[0] ?? sequence.join(' ');
         setDraftOptions(merged);
         // Only move the draft if it's still pointing at whatever WE set it
@@ -328,7 +336,7 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
               {[draft, ...draftOptions.filter((option) => option !== draft)].map((sentence, index) => {
                 if (!sentence.trim()) return null;
                 const speaking = speakingState === 'speaking' && spoken === sentence;
-                const fromMemory = isSameSentence(sentence, rememberedSentence);
+                const fromMemory = rememberedSentences.some((r) => isSameSentence(sentence, r));
                 return (
                   <Pressable
                     key={`${sentence}-${index}`}

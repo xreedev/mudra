@@ -14,6 +14,7 @@ import {
   buildGlossUserPrompt,
   buildSmartRepliesUserPrompt,
 } from './prompts';
+import { MAX_CANDIDATES_PER_SEQUENCE } from './sentenceMemory';
 
 /** Fold the few-shot pairs into the system prompt (keeps complete() generic). */
 export function glossSystemWithFewShot(): string {
@@ -59,27 +60,38 @@ export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Pro
 }
 
 /** Word-for-word equal, ignoring surrounding whitespace and case — the same
- *  tolerant match `withRememberedSentence` dedupes with, exported so a UI
- *  can also ask "is this displayed option the remembered one?" (e.g. to
- *  show a "from memory" tag) without duplicating the comparison. */
+ *  tolerant match `withRememberedSentences` dedupes with, exported so a UI
+ *  can also ask "is this displayed option a remembered one?" (e.g. to show
+ *  a "from memory" tag) without duplicating the comparison. */
 export function isSameSentence(a: string | undefined, b: string | undefined): boolean {
   if (!a || !b) return false;
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
 /**
- * Combines a remembered sentence (the user's past pick for this exact sign
- * sequence, see sentenceMemory.ts) with fresh LLM candidates: the remembered
- * one always leads, and any LLM option that's word-for-word the same
- * (trimmed, case-insensitive) is dropped rather than shown twice.
+ * Combines the sentences remembered for this exact sign sequence (see
+ * sentenceMemory.ts) with fresh LLM candidates, memory-first, up to
+ * `MAX_CANDIDATES_PER_SEQUENCE` total: every remembered sentence leads (most-
+ * recently-picked first), then LLM options fill whatever slots are left —
+ * skipping any LLM option that's word-for-word the same (trimmed, case-
+ * insensitive) as one already remembered, so it's never shown twice. When
+ * memory alone already fills every slot, `llmOptions` should be `[]` —
+ * callers skip the LLM call entirely in that case (see CallScreen /
+ * TalkAloudScreen's composeForSequence), since none of it could ever be
+ * shown anyway.
  */
-export function withRememberedSentence(
-  remembered: string | undefined,
+export function withRememberedSentences(
+  remembered: readonly string[],
   llmOptions: readonly string[],
 ): string[] {
-  if (!remembered) return [...llmOptions];
-  const rest = llmOptions.filter((option) => !isSameSentence(option, remembered));
-  return [remembered, ...rest];
+  const memoryFirst = remembered.slice(0, MAX_CANDIDATES_PER_SEQUENCE);
+  const remainingSlots = MAX_CANDIDATES_PER_SEQUENCE - memoryFirst.length;
+  if (remainingSlots <= 0) return memoryFirst;
+
+  const rest = llmOptions
+    .filter((option) => !memoryFirst.some((r) => isSameSentence(option, r)))
+    .slice(0, remainingSlots);
+  return [...memoryFirst, ...rest];
 }
 
 /** callee transcript → up to 3 short reply options. Tolerant JSON parsing. */
