@@ -43,6 +43,15 @@ export interface CameraStageHandle {
 
 export interface CameraStageProps {
   facing?: 'front' | 'back';
+  /**
+   * A VisionCamera frame processor (from `useFrameProcessor`) — runs
+   * real-time detection (e.g. hand-landmark recognition) on every camera
+   * frame. Requires `newArchEnabled=false` in this build: VisionCamera's
+   * Frame Processor JSI proxy doesn't yet support Bridgeless mode, which
+   * RN 0.76's stock Android template otherwise couples to New Architecture.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  frameProcessor?: any;
   /** Overlay content rendered on top of the preview. */
   children?: React.ReactNode;
   /** Rounded corners for an inset preview; square for a full-bleed one. */
@@ -60,7 +69,7 @@ export interface CameraStageProps {
 }
 
 export const CameraStage = forwardRef<CameraStageHandle, CameraStageProps>(function CameraStage(
-  { facing = 'front', children, rounded = true, placeholderAlign = 'center', style },
+  { facing = 'front', frameProcessor, children, rounded = true, placeholderAlign = 'center', style },
   ref,
 ) {
   const theme = useTheme();
@@ -147,6 +156,8 @@ export const CameraStage = forwardRef<CameraStageHandle, CameraStageProps>(funct
           device={device}
           isActive
           photo
+          frameProcessor={frameProcessor}
+          pixelFormat="yuv"
         />
       ) : (
         <Placeholder status={status} onRequestPermission={requestPermission} align={placeholderAlign} />

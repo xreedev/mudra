@@ -85,6 +85,12 @@ android {
         versionCode 1
         versionName "1.0"
     }
+    // MediaPipe's .task model file must not be re-compressed into the APK —
+    // it's read via mmap/AssetFileDescriptor, which requires it stay a
+    // contiguous, uncompressed entry in the zip.
+    androidResources {
+        noCompress += ["task"]
+    }
     signingConfigs {
         debug {
             storeFile file('debug.keystore')
@@ -116,4 +122,16 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Real on-device hand-landmark detection for the sign-recognition
+    // frame processor plugin (see HandLandmarksFrameProcessorPlugin.kt).
+    // Same version already proven working in the android_viewer branch.
+    implementation("com.google.mediapipe:tasks-vision:0.10.14")
+    // HandLandmarkerHelper.kt takes an androidx.camera.core.ImageProxy (from
+    // VisionCamera's Frame.getImageProxy()) — vision-camera depends on
+    // CameraX internally but doesn't expose it transitively, so the app
+    // module needs its own reference to resolve the type. Pinned to the
+    // exact version vision-camera itself uses to avoid a resolution
+    // conflict (see node_modules/react-native-vision-camera/android/build.gradle).
+    implementation("androidx.camera:camera-core:1.5.0-alpha03")
 }

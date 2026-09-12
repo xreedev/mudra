@@ -11,6 +11,8 @@ import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.facebook.react.defaults.DefaultReactNativeHost
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
 import com.facebook.soloader.SoLoader
+import com.mrousavy.camera.frameprocessors.FrameProcessorPluginRegistry
+import com.mudraapp.recognition.HandLandmarksFrameProcessorPlugin
 
 class MainApplication : Application(), ReactApplication {
 
@@ -39,6 +41,13 @@ class MainApplication : Application(), ReactApplication {
     if (BuildConfig.IS_NEW_ARCHITECTURE_ENABLED) {
       // If you opted-in for the New Architecture, we load the native entry point for this app.
       load()
+    }
+    // Real on-device hand-landmark detection for the sign-recognition
+    // pipeline (see HandLandmarksFrameProcessorPlugin.kt + src/recognition/
+    // on the JS side). Must be registered before any JS calls
+    // VisionCameraProxy.initFrameProcessorPlugin('detectHandLandmarks').
+    FrameProcessorPluginRegistry.addFrameProcessorPlugin("detectHandLandmarks") { proxy, _ ->
+      HandLandmarksFrameProcessorPlugin(proxy)
     }
   }
 }

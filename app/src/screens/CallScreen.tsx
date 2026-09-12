@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -12,6 +12,7 @@ import {
 } from '../components';
 import { DEMO_DRAFT, DEMO_RECOGNIZED, SEED_CONTACTS } from '../data/mock';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
+import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -34,6 +35,24 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
+  const [recognized, setRecognized] = useState<string[]>(DEMO_RECOGNIZED);
+
+  // Real hand-landmark detection (HandLandmarksFrameProcessorPlugin.kt,
+  // wrapping MediaPipe's HandLandmarker) matched against the bundled
+  // gesture templates every frame.
+  const { frameProcessor, match } = useLiveHandGestures();
+  const lastAppendedLabel = useRef<string | null>(null);
+
+  useEffect(() => {
+    // A held sign matches on every frame — only append when the recognized
+    // label actually changes, or the chip list would grow unboundedly for
+    // as long as the user holds one sign. isKnown=false (below the
+    // confidence threshold) is TRAINING.md's "never guess": show nothing.
+    if (!match?.isKnown || match.label === lastAppendedLabel.current) return;
+    lastAppendedLabel.current = match.label;
+    setRecognized((prev) => [...prev, match.label]);
+    setDraft(match.label);
+  }, [match]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
@@ -47,6 +66,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
         facing={facing}
         rounded={false}
         placeholderAlign="top"
+        frameProcessor={frameProcessor}
         style={StyleSheet.absoluteFill}
       >
         <View
@@ -112,7 +132,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="label" style={[styles.onDark, styles.dim]}>
                 RECOGNIZED
               </Text>
-              <GlossChips tokens={DEMO_RECOGNIZED} tone="accent" />
+              <GlossChips tokens={recognized} tone="accent" />
             </View>
 
             <View
