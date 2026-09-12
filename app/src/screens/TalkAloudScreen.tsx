@@ -83,15 +83,30 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
     [speaker],
   );
 
+  // Once a sentence is picked & spoken, the recognized-signs panel closes
+  // and the draft resets — that's the end of the "turn", so the next sign
+  // starts a fresh sequence rather than appending onto the one just spoken.
+  // Also invalidates any in-flight compose so a late-arriving result can't
+  // repopulate the panel right after it closes.
+  const resetRecognition = useCallback(() => {
+    composeRequestId.current += 1;
+    lastAppendedLabel.current = null;
+    setRecognized([]);
+    setDraftOptions([]);
+    setDraft(DEMO_DRAFT);
+  }, []);
+
   // Speaking a sentence out of the candidate list IS the confirmation
   // gate here (see the screen doc comment) — so that tap is also the
-  // moment the pick is remembered for this exact sign sequence.
+  // moment the pick is remembered for this exact sign sequence, and the
+  // moment the recognized-signs panel closes for the next one.
   const speakAndRemember = useCallback(
     (text: string) => {
       speak(text);
       rememberSentenceChoice(recognized, text).catch(() => undefined);
+      resetRecognition();
     },
-    [speak, recognized],
+    [speak, recognized, resetRecognition],
   );
 
   const handleGuideComplete = useCallback(() => {

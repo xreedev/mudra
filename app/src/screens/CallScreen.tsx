@@ -81,6 +81,19 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
 
+  // Once a sentence is confirmed & spoken, the recognized-signs panel closes
+  // and the draft resets — the confirmation is the end of that "turn", so
+  // the next sign starts a fresh sequence rather than appending onto the
+  // one that was just spoken. Also invalidates any in-flight compose so a
+  // late-arriving result can't repopulate the panel right after it closes.
+  const resetRecognition = useCallback(() => {
+    composeRequestId.current += 1;
+    lastAppendedLabel.current = null;
+    setRecognized([]);
+    setDraftOptions([]);
+    setDraft(DEMO_DRAFT);
+  }, []);
+
   // Detection zone: full screen width, a band centered on the guide circle
   // but taller than it. A hand is only "detected" for the guide ring and
   // recognition if its wrist falls inside this band — MediaPipe itself
@@ -413,7 +426,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               size="lg"
               block
               disabled={draft.trim().length === 0}
-              onPress={() => rememberSentenceChoice(recognized, draft).catch(() => undefined)}
+              onPress={() => {
+                rememberSentenceChoice(recognized, draft).catch(() => undefined);
+                resetRecognition();
+              }}
             />
 
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
