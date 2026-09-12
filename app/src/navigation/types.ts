@@ -9,6 +9,7 @@ export type RootStackParamList = {
   Home: undefined;
   Call: undefined;
   TalkAloud: undefined;
+  Receive: undefined;
   Memory: undefined;
   AddSign: undefined;
   Chat: undefined;

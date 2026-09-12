@@ -20,9 +20,11 @@
     "react-native-safe-area-context": "^5.9.1",
     "react-native-screens": "4.4.0",
     "react-native-svg": "15.8.0",
+    "react-native-tcp-socket": "^6.2.0",
     "react-native-tts": "^4.1.1",
     "react-native-vision-camera": "^4.7.3",
     "react-native-worklets-core": "^1.5.0",
+    "react-native-zeroconf": "^0.13.8",
     "whisper.rn": "^0.7.4"
   },
   "devDependencies": {

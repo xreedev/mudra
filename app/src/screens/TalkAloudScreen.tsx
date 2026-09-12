@@ -24,6 +24,7 @@ import {
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
+import { useAslRelaySender } from '../relay/useAslRelaySender';
 import { LocalSpeaker, type SpeakingState } from '../speech/LocalSpeaker';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
@@ -35,7 +36,8 @@ import type { ScreenProps } from '../navigation/types';
  * recognition feeding the on-device LLM, which composes candidate sentences from the recognized
  * glosses — but there is no call partner to speak to, so there is no contact step and no call
  * chrome. Instead, picking one of the candidate sentences speaks it immediately through the
- * phone's own speaker: the sentence list itself is the confirmation gate, the same role
+ * phone's own speaker, and relays it to a receiver phone on the same WiFi if one is connected
+ * (see `asl-relay-rn`): the sentence list itself is the confirmation gate, the same role
  * "Confirm & speak" plays on a call.
  */
 
@@ -73,6 +75,10 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
   const cameraStageRef = useRef<CameraStageHandle>(null);
   const speaker = useRef(new LocalSpeaker()).current;
 
+  // Same-WiFi relay to a second phone (see asl-relay-rn): scans for a receiver advertised on
+  // the local network and auto-connects.
+  const relay = useAslRelaySender();
+
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
   // Tracks the draft value WE last set programmatically (as opposed to one
@@ -98,8 +104,9 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
         setSpeakingState(state);
         setSpoken(state === 'idle' ? null : text);
       });
+      relay.sendText(text);
     },
-    [speaker],
+    [speaker, relay],
   );
 
   // Once a sentence is picked & spoken, the recognized-signs panel closes
@@ -283,6 +290,25 @@ export function TalkAloudScreen({ navigation }: ScreenProps<'TalkAloud'>) {
                 Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
               </Text>
             </View>
+            {relay.available ? (
+              <View
+                style={[
+                  styles.pill,
+                  {
+                    marginLeft: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                  },
+                ]}
+              >
+                <Text variant="caption" style={styles.onDark}>
+                  {relay.status === 'connected' && `Relay · sending to ${relay.peerName}`}
+                  {relay.status === 'scanning' && 'Relay · looking for a receiver phone'}
+                  {relay.status === 'connecting' && 'Relay · connecting…'}
+                  {relay.status === 'disconnected' && 'Relay · not connected'}
+                </Text>
+              </View>
+            ) : null}
             {llm.status !== 'ready' ? (
               <View
                 style={[

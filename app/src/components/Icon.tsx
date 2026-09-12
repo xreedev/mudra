@@ -23,7 +23,8 @@ export type IconName =
   | 'pin'
   | 'volume'
   | 'stop'
-  | 'alert';
+  | 'alert'
+  | 'wifi';
 
 export interface IconProps {
   name: IconName;
@@ -193,6 +194,16 @@ function renderPaths(name: IconName, common: StrokeProps, stroke: string) {
           <Path {...common} d="M12 3.5 21.5 20h-19L12 3.5Z" />
           <Path {...common} d="M12 10v4" />
           <Circle cx={12} cy={17} r={1} fill={stroke} stroke="none" />
+        </>
+      );
+    case 'wifi':
+      // Three nested signal arcs over a dot — same on/off language as 'mic' for a relay link.
+      return (
+        <>
+          <Path {...common} d="M4 9.5a11.3 11.3 0 0 1 16 0" />
+          <Path {...common} d="M7 13a6.8 6.8 0 0 1 10 0" />
+          <Path {...common} d="M10 16.5a2.6 2.6 0 0 1 4 0" />
+          <Circle cx={12} cy={19.5} r={1} fill={stroke} stroke="none" />
         </>
       );
     default:

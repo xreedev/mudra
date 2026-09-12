@@ -7,6 +7,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Same-WiFi ASL relay (see asl-relay-rn): mDNS discovery needs multicast explicitly
+         enabled, or Zeroconf.scan() silently finds nothing on some devices. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

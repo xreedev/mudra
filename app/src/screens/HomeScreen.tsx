@@ -95,6 +95,12 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             icon="volume"
             onPress={() => navigation.navigate('TalkAloud')}
           />
+          <Tile
+            title="Receive on this phone"
+            description="Hear sentences sent from another phone on this WiFi"
+            icon="wifi"
+            onPress={() => navigation.navigate('Receive')}
+          />
         </View>
       </View>
 
