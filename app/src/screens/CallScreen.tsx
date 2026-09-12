@@ -14,6 +14,13 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
+import {
+  getRememberedSentences,
+  isSameSentence,
+  MAX_CANDIDATES_PER_SEQUENCE,
+  rememberSentenceChoice,
+  withRememberedSentences,
+} from '../llm';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useAslRelaySender } from '../relay/useAslRelaySender';
@@ -49,13 +56,20 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Up to 3 candidate readings for the current draft — genuinely different
-  // interpretations (e.g. "you" the driver vs "I" the driver), not 3
-  // rewordings of the same meaning, since the glosses alone can't say which
-  // role the signer has. `draft` is always one of these (or the raw gloss
-  // fallback when the LLM isn't ready); tapping an option in the UI below
-  // just changes which one `draft` points at.
+  // Candidate readings for the current draft: every sentence remembered for
+  // this exact sign sequence leads (most-recently-picked first — the same
+  // signs can genuinely mean different things on different occasions, so
+  // picking a new one adds to memory rather than replacing it), then LLM
+  // readings fill whatever slots are left, up to MAX_CANDIDATES_PER_SEQUENCE
+  // total. `draft` is always one of these (or the raw gloss fallback when
+  // nothing is remembered and the LLM isn't ready); tapping an option in the
+  // UI below just changes which one `draft` points at.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
+  // The sentences remembered for the current sign sequence, if any — kept
+  // separately (rather than re-derived from draftOptions) purely so the UI
+  // can tag whichever options match one of them as "From memory", including
+  // after the user has switched to a different option.
+  const [rememberedSentences, setRememberedSentences] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
   // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
   // to-edge) screen, so the window size is the skeleton's coordinate space
@@ -94,6 +108,89 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // reacting to instantaneous per-frame matches.
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
+  // Tracks the draft value WE last set programmatically (as opposed to one
+  // the user picked) — lets a later backfill (see the llm.status effect
+  // below) upgrade `draftOptions` without ever clobbering a choice the user
+  // already made.
+  const autoDraftRef = useRef<string>(DEMO_DRAFT);
+
+  // Once a sentence is confirmed & spoken, the recognized-signs panel closes
+  // and the draft resets — the confirmation is the end of that "turn", so
+  // the next sign starts a fresh sequence rather than appending onto the
+  // one that was just spoken. Also invalidates any in-flight compose so a
+  // late-arriving result can't repopulate the panel right after it closes.
+  const resetRecognition = useCallback(() => {
+    composeRequestId.current += 1;
+    lastAppendedLabel.current = null;
+    autoDraftRef.current = DEMO_DRAFT;
+    setRecognized([]);
+    setDraftOptions([]);
+    setRememberedSentences([]);
+    setDraft(DEMO_DRAFT);
+  }, []);
+
+  // "Confirm & speak" is the confirmation gate (see the screen doc comment) — so that tap is
+  // also the moment the pick is remembered for this exact sign sequence, the moment it's relayed
+  // to a connected receiver phone, and the moment the recognized-signs panel closes for the next
+  // one.
+  const confirmAndSpeak = useCallback(() => {
+    speakDraft();
+    rememberSentenceChoice(recognized, draft).catch(() => undefined);
+    resetRecognition();
+  }, [speakDraft, recognized, draft, resetRecognition]);
+
+  // The one place a sign sequence's remembered sentences + LLM options are
+  // looked up and merged — called both when a new sign completes (below)
+  // and, via the effect further down, to backfill LLM options for the
+  // CURRENT sequence once the model finishes loading (it's often still
+  // "loading" partway through a sign sequence — never blocking signing on
+  // it means the LLM's readings can otherwise never appear for that
+  // sequence).
+  const composeForSequence = useCallback(
+    (sequence: string[]) => {
+      const requestId = ++composeRequestId.current;
+
+      (async () => {
+        // Independent of the LLM: every sentence the user has picked for
+        // this EXACT sign sequence before — always leads the list.
+        const remembered = await getRememberedSentences(sequence).catch(() => []);
+        if (composeRequestId.current !== requestId) return;
+        setRememberedSentences(remembered);
+
+        let options: string[] = [];
+        // Memory already fills every slot — skip the LLM call entirely,
+        // there's no room left to show anything it would return.
+        if (remembered.length < MAX_CANDIDATES_PER_SEQUENCE && llm.status === 'ready') {
+          // Compose over the WHOLE sequence so far, not just the new word —
+          // "WHERE" alone can't become "Where is the hospital?", but
+          // "WHERE HOSPITAL" together can.
+          try {
+            options = await llm.composeSentenceOptions(sequence);
+          } catch {
+            // LLM call failed — fall back to the remembered picks (if any)
+            // or the raw gloss sequence, rather than leaving the draft
+            // stuck on a stale sentence.
+            options = [];
+          }
+          if (composeRequestId.current !== requestId) return;
+        }
+        // else: memory already full, or the model isn't ready (still
+        // loading, missing, or errored) — never block signing on it. Show
+        // whatever's remembered, else the raw glosses; the effect below
+        // upgrades this once the model becomes ready (unless memory is
+        // already full, in which case there's nothing to upgrade).
+
+        const merged = withRememberedSentences(remembered, options);
+        const nextDraft = merged[0] ?? sequence.join(' ');
+        setDraftOptions(merged);
+        // Only move the draft if it's still pointing at whatever WE set it
+        // to last time — never overwrite a sentence the user has picked.
+        setDraft((prev) => (prev === autoDraftRef.current ? nextDraft : prev));
+        autoDraftRef.current = nextDraft;
+      })();
+    },
+    [llm],
+  );
 
   // Detection zone: full screen width, a band centered on the guide circle
   // but taller than it. A hand is only "detected" for the guide ring and
@@ -120,40 +217,26 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     lastAppendedLabel.current = zonedMatch.label;
     setRecognized((prev) => {
       const updated = [...prev, zonedMatch.label];
-
-      if (llm.status === 'ready') {
-        // Compose over the WHOLE sequence so far, not just the new word —
-        // "WHERE" alone can't become "Where is the hospital?", but
-        // "WHERE HOSPITAL" together can. A race guard (requestId) discards
-        // a stale result if the user signs another word before this
-        // composition (a real LLM call, ~0.5-1.5s per llm-testbed) returns.
-        const requestId = ++composeRequestId.current;
-        llm
-          .composeSentenceOptions(updated)
-          .then((options) => {
-            if (composeRequestId.current !== requestId) return;
-            setDraftOptions(options);
-            setDraft(options[0] ?? updated.join(' '));
-          })
-          .catch(() => {
-            // LLM call failed — fall back to the raw gloss sequence rather
-            // than leaving the draft stuck on a stale sentence.
-            if (composeRequestId.current === requestId) {
-              setDraftOptions([]);
-              setDraft(updated.join(' '));
-            }
-          });
-      } else {
-        // Model not ready (still loading, missing, or errored) — never
-        // block signing on it. Show the raw glosses so the app stays
-        // usable; the LLM upgrades this to real options once ready.
-        setDraftOptions([]);
-        setDraft(updated.join(' '));
-      }
-
+      composeForSequence(updated);
       return updated;
     });
-  }, [zonedMatch, llm]);
+  }, [zonedMatch, composeForSequence]);
+
+  // Signing doesn't wait for the LLM (composeForSequence above always shows
+  // SOMETHING immediately), so a sequence recognized while the model was
+  // still loading only ever shows its remembered pick, if any — with no
+  // later nudge, the LLM's readings would just never appear for that
+  // sequence. Once the model finishes loading, recompute for whatever is
+  // still the current sequence so those readings can join it.
+  useEffect(() => {
+    if (llm.status === 'ready' && recognized.length > 0) {
+      composeForSequence(recognized);
+    }
+    // Deliberately keyed on llm.status alone: recomposing on every new sign
+    // is handleGuideComplete's job, this effect exists only to backfill a
+    // sequence that was already recognized before the model became ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [llm.status]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
@@ -341,6 +424,19 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
                 {draft}
               </Text>
+              {rememberedSentences.some((r) => isSameSentence(draft, r)) && draftOptions.length <= 1 ? (
+                <View
+                  style={[
+                    styles.memoryTagRow,
+                    { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs },
+                  ]}
+                >
+                  <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                  <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                    From memory
+                  </Text>
+                </View>
+              ) : null}
 
               {draftOptions.length > 1 ? (
                 // The glosses alone can't say whether the signer is the
@@ -356,12 +452,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   </Text>
                   {draftOptions.map((option, index) => {
                     const selected = option === draft;
+                    const fromMemory = rememberedSentences.some((r) => isSameSentence(option, r));
                     return (
                       <Pressable
                         key={`${option}-${index}`}
                         accessibilityRole="button"
                         accessibilityState={{ selected }}
-                        onPress={() => setDraft(option)}
+                        onPress={() => {
+                          setDraft(option);
+                          rememberSentenceChoice(recognized, option).catch(() => undefined);
+                        }}
                         style={[
                           styles.optionRow,
                           {
@@ -379,13 +479,28 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                         ) : (
                           <View style={styles.optionCheckSpacer} />
                         )}
-                        <Text
-                          variant="body"
-                          style={[styles.optionText, selected ? undefined : styles.onDark]}
-                          tone={selected ? 'accent' : undefined}
-                        >
-                          {option}
-                        </Text>
+                        <View style={styles.optionTextCol}>
+                          <Text
+                            variant="body"
+                            style={selected ? undefined : styles.onDark}
+                            tone={selected ? 'accent' : undefined}
+                          >
+                            {option}
+                          </Text>
+                          {fromMemory ? (
+                            <View
+                              style={[
+                                styles.memoryTagRow,
+                                { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs / 2 },
+                              ]}
+                            >
+                              <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
+                              <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                                From memory
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
                       </Pressable>
                     );
                   })}
@@ -438,7 +553,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               size="lg"
               block
               disabled={draft.trim().length === 0}
-              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speakDraft())}
+              onPress={() => (speakingState === 'speaking' ? speaker.stop() : confirmAndSpeak())}
             />
             {speakingState === 'unavailable' ? (
               <Text variant="caption" style={[styles.onDark, styles.dim]}>
@@ -620,7 +735,8 @@ const styles = StyleSheet.create({
   textAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
   optionRow: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth * 2 },
   optionCheckSpacer: { width: 16 },
-  optionText: { flex: 1 },
+  optionTextCol: { flex: 1 },
+  memoryTagRow: { flexDirection: 'row', alignItems: 'center' },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',

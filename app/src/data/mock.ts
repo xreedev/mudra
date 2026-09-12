@@ -2,57 +2,9 @@
  * Placeholder content for the UI scaffold.
  *
  * Everything here is local and fake on purpose — this build is the design, not the pipeline.
- * When the real layers land, these shapes are what they should produce: `memory-layer-rn`
- * already returns `MemoryPair`-shaped records, and the recognizer will produce `tokens`.
+ * When the real layers land, these shapes are what they should produce: the recognizer will
+ * produce `tokens`.
  */
-
-export interface MemoryPair {
-  id: string;
-  /** Canonical gloss sequence, one entry per sign. */
-  tokens: string[];
-  /** The English sentence the user confirmed for that sequence. */
-  sentence: string;
-  useCount: number;
-  pinned: boolean;
-}
-
-export const SEED_MEMORIES: MemoryPair[] = [
-  {
-    id: '1',
-    tokens: ['ME', 'TEA', 'HOT'],
-    sentence: 'I want hot tea',
-    useCount: 12,
-    pinned: false,
-  },
-  {
-    id: '2',
-    tokens: ['ME', 'NEED', 'METFORMIN', 'ONE', 'STRIP'],
-    sentence: 'I need one strip of Metformin, please',
-    useCount: 8,
-    pinned: true,
-  },
-  {
-    id: '3',
-    tokens: ['HELP', 'AMBULANCE', 'NOW'],
-    sentence: "I'm Deaf. I need an ambulance now.",
-    useCount: 2,
-    pinned: true,
-  },
-  {
-    id: '4',
-    tokens: ['THANK_YOU', 'BYE'],
-    sentence: 'Thank you, goodbye',
-    useCount: 21,
-    pinned: false,
-  },
-  {
-    id: '5',
-    tokens: ['ME', 'COME', 'LATER'],
-    sentence: "I'll come by later today",
-    useCount: 4,
-    pinned: false,
-  },
-];
 
 export interface CustomSign {
   id: string;
