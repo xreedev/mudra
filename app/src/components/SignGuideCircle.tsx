@@ -5,7 +5,10 @@ import { Text } from './Text';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-const HOLD_MS = 1000;
+/** How long a hand must be held before the ring completes. Exported so
+ *  callers that need to judge hold stability (e.g. Add custom sign) can
+ *  size their sample window to match. */
+export const HOLD_MS = 1000;
 /** Pause between one capture completing and the next hold starting, so a
  *  new sign has to visibly form rather than the ring immediately refilling
  *  on whatever the hand happens to still be doing. */

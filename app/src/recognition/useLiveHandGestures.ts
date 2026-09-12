@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useFrameProcessor, VisionCameraProxy } from 'react-native-vision-camera';
 import { useRunOnJS } from 'react-native-worklets-core';
-import { BUNDLED_GESTURE_TEMPLATES } from './bundledTemplates';
 import { recognizeLandmarks } from './gestureRecognizer';
-import type { GestureMatch, HandLandmark } from './types';
+import { useAllGestureTemplates } from './useAllGestureTemplates';
+import type { GestureMatch, GestureTemplate, HandLandmark } from './types';
 
 // Created once per JS bundle load, not per component instance — matches
 // VisionCamera's own documented usage (see its useFrameProcessor example).
@@ -26,14 +26,19 @@ export interface LiveHandGestures {
    *  (drives the hold-to-confirm guide). Recognition matching below still
    *  runs on the raw, unsmoothed points. */
   landmarks: HandLandmark[] | null;
+  /** Every template currently being matched against — bundled plus
+   *  user-added — for UI that reports how many signs the app knows. */
+  templates: GestureTemplate[];
 }
 
 /**
  * Runs real on-device hand-landmark detection on every camera frame and
- * matches it against the bundled gesture templates — the live-camera
- * connection src/recognition/README.md describes as still needed:
- * "Connect a MediaPipe... frame-processor plugin and call recognizeLandmarks
- * with its single-hand result."
+ * matches it against every known gesture template — bundled ones plus
+ * whatever the user has recorded via Add custom sign (see
+ * `useAllGestureTemplates`) — the live-camera connection
+ * src/recognition/README.md describes as still needed: "Connect a
+ * MediaPipe... frame-processor plugin and call recognizeLandmarks with its
+ * single-hand result."
  */
 // How much each new frame moves the displayed point toward the raw
 // detection: lower = smoother but laggier, higher = snappier but jittery.
@@ -43,11 +48,19 @@ export function useLiveHandGestures(): LiveHandGestures {
   const [match, setMatch] = useState<GestureMatch | null>(null);
   const [landmarks, setLandmarks] = useState<HandLandmark[] | null>(null);
   const smoothedRef = useRef<HandLandmark[] | null>(null);
+  const { templates } = useAllGestureTemplates();
+  // `handleLandmarks` is bound once (see the empty deps array below) so the
+  // frame processor's worklet stays stable — it reads the latest templates
+  // through this ref rather than closing over a stale array.
+  const templatesRef = useRef(templates);
+  useEffect(() => {
+    templatesRef.current = templates;
+  }, [templates]);
 
   const handleLandmarks = useRunOnJS((frameLandmarks: HandLandmark[] | null) => {
     // Recognition matches on the raw points — smoothing would blur exactly
     // the shape differences it needs to tell signs apart.
-    setMatch(recognizeLandmarks(frameLandmarks, BUNDLED_GESTURE_TEMPLATES));
+    setMatch(recognizeLandmarks(frameLandmarks, templatesRef.current));
 
     if (!frameLandmarks) {
       smoothedRef.current = null;
@@ -77,5 +90,5 @@ export function useLiveHandGestures(): LiveHandGestures {
     [handleLandmarks],
   );
 
-  return { frameProcessor, match, landmarks };
+  return { frameProcessor, match, landmarks, templates };
 }

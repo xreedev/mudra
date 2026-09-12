@@ -1,12 +1,17 @@
+import { isValidLandmarks, REQUIRED_LANDMARK_COUNT } from './captureQuality';
 import type { GestureMatch, GestureTemplate, GestureTemplateFile, HandLandmark } from './types';
 
 const GEOMETRY_PAIRS: ReadonlyArray<readonly [number, number]> = [
   [0, 4], [0, 8], [0, 12], [0, 16], [0, 20], [4, 8], [8, 12], [12, 16], [16, 20],
 ];
 
+/** 21 landmarks × 3 coordinates, plus one distance per `GEOMETRY_PAIRS` entry
+ *  — every valid `features` array, bundled or user-recorded, is this length. */
+export const FEATURE_VECTOR_LENGTH = REQUIRED_LANDMARK_COUNT * 3 + GEOMETRY_PAIRS.length;
+
 /** Matches the feature recipe used by custom_gesture_snapshot_app exactly. */
 export function featureVector(landmarks: readonly HandLandmark[]): number[] | null {
-  if (landmarks.length !== 21) return null;
+  if (!isValidLandmarks(landmarks)) return null;
   const wrist = landmarks[0];
   let scale = 0;
   for (const point of landmarks) {
@@ -35,14 +40,38 @@ export function featureDistance(a: readonly number[], b: readonly number[]): num
   return Math.sqrt(total / length);
 }
 
+/**
+ * Validates and filters an untyped `GestureTemplateFile`-shaped blob —
+ * whether it's the bundled asset or a hand-edited/corrupted on-device file,
+ * a single bad record must never take down the whole set. A gesture is
+ * dropped (not the whole file) if its label is missing, its `features`
+ * aren't exactly `FEATURE_VECTOR_LENGTH` finite numbers (wrong dimension —
+ * e.g. from an incompatible recorder — would silently corrupt every
+ * distance comparison against it), or its optional `hand_landmarks` contain
+ * non-finite values.
+ */
 export function parseGestureTemplates(input: unknown): GestureTemplate[] {
   if (!input || typeof input !== 'object' || !Array.isArray((input as GestureTemplateFile).gestures)) return [];
-  return (input as GestureTemplateFile).gestures.filter(
-    (gesture): gesture is GestureTemplate => typeof gesture?.label === 'string' && gesture.label.trim().length > 0 && Array.isArray(gesture.features) && gesture.features.every((value) => typeof value === 'number'),
-  );
+  return (input as GestureTemplateFile).gestures.filter((gesture): gesture is GestureTemplate => {
+    if (typeof gesture?.label !== 'string' || gesture.label.trim().length === 0) return false;
+    if (
+      !Array.isArray(gesture.features) ||
+      gesture.features.length !== FEATURE_VECTOR_LENGTH ||
+      !gesture.features.every((value) => typeof value === 'number' && Number.isFinite(value))
+    ) {
+      return false;
+    }
+    if (gesture.hand_landmarks !== undefined && !isValidLandmarks(gesture.hand_landmarks)) return false;
+    return true;
+  });
 }
 
-export function recognizeLandmarks(landmarks: readonly HandLandmark[] | null | undefined, templates: readonly GestureTemplate[], threshold = 0.42): GestureMatch {
+/** Below this RMS feature distance, two gestures are considered the same
+ *  sign — used both for live recognition and for flagging a near-duplicate
+ *  when a user records a new custom gesture. */
+export const DEFAULT_MATCH_THRESHOLD = 0.42;
+
+export function recognizeLandmarks(landmarks: readonly HandLandmark[] | null | undefined, templates: readonly GestureTemplate[], threshold = DEFAULT_MATCH_THRESHOLD): GestureMatch {
   const features = landmarks ? featureVector(landmarks) : null;
   if (!features || templates.length === 0) return { label: 'UNKNOWN', distance: Number.POSITIVE_INFINITY, isKnown: false };
   const ranked = templates.map((template) => ({ label: template.label, distance: featureDistance(features, template.features) })).sort((first, second) => first.distance - second.distance);
