@@ -1,16 +1,19 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Button,
   CameraStage,
-  GlossChips,
+  type CameraStageHandle,
+  GlossBubbles,
+  HandSkeleton,
   Icon,
   IconButton,
   Screen,
+  SignGuideCircle,
   Text,
 } from '../components';
-import { DEMO_DRAFT, DEMO_RECOGNIZED, SEED_CONTACTS } from '../data/mock';
+import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useTheme } from '../theme';
@@ -28,6 +31,15 @@ import type { ScreenProps } from '../navigation/types';
  * The draft is never spoken until "Confirm & speak" is pressed. That gate is the whole safety
  * model of the product, so it is a full-width primary button and nothing sits near it.
  */
+
+/** Diameter of the white placement guide — kept in sync with the rectangle below. */
+const GUIDE_SIZE = 300;
+/** How far the detection zone extends above/below the circle. Full screen width,
+ *  just a taller band than the circle itself — a hand anywhere sideways in frame
+ *  still counts as long as it's roughly at sign height, but a hand held too low
+ *  or too high (e.g. resting at your side, or waving near your face) doesn't. */
+const ZONE_PADDING = 50;
+
 export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -35,34 +47,66 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
-  const [recognized, setRecognized] = useState<string[]>(DEMO_RECOGNIZED);
+  const [recognized, setRecognized] = useState<string[]>([]);
+  // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
+  // to-edge) screen, so the window size is the skeleton's coordinate space
+  // — reading it this way avoids the race of waiting on an onLayout
+  // measurement that can still be 0,0 on the frames the skeleton needs it.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   // Real hand-landmark detection (HandLandmarksFrameProcessorPlugin.kt,
   // wrapping MediaPipe's HandLandmarker) matched against the bundled
   // gesture templates every frame.
-  const { frameProcessor, match } = useLiveHandGestures();
+  const { frameProcessor, match, landmarks } = useLiveHandGestures();
   const lastAppendedLabel = useRef<string | null>(null);
+  const cameraStageRef = useRef<CameraStageHandle>(null);
 
-  useEffect(() => {
-    // A held sign matches on every frame — only append when the recognized
-    // label actually changes, or the chip list would grow unboundedly for
-    // as long as the user holds one sign. isKnown=false (below the
-    // confidence threshold) is TRAINING.md's "never guess": show nothing.
-    if (!match?.isKnown || match.label === lastAppendedLabel.current) return;
-    lastAppendedLabel.current = match.label;
-    setRecognized((prev) => [...prev, match.label]);
-    setDraft(match.label);
-  }, [match]);
+  // Detection zone: full screen width, a band centered on the guide circle
+  // but taller than it. A hand is only "detected" for the guide ring and
+  // recognition if its wrist falls inside this band — MediaPipe itself
+  // still runs on the whole frame, but a hand elsewhere in shot (resting,
+  // passing through background) is ignored rather than triggering a hold.
+  const zoneHalfHeight = GUIDE_SIZE / 2 + ZONE_PADDING;
+  const zoneTop = windowHeight / 2 - zoneHalfHeight;
+  const zoneBottom = windowHeight / 2 + zoneHalfHeight;
+  const wrist = landmarks?.[0] ?? null;
+  const inZone = !!wrist && wrist.y * windowHeight >= zoneTop && wrist.y * windowHeight <= zoneBottom;
+  const zonedLandmarks = inZone ? landmarks : null;
+  const zonedMatch = inZone ? match : null;
+  const handDetected = !!zonedLandmarks && zonedLandmarks.length > 0;
+
+  const handleGuideComplete = useCallback(() => {
+    // The white guide ring completing a hold is the "shutter" — snapshot
+    // whatever sign is being held at that instant and process it, rather
+    // than appending on every frame a match happens to be known (that
+    // produced duplicate/jittery entries as a held sign kept re-matching).
+    cameraStageRef.current?.capture();
+    if (zonedMatch?.isKnown && zonedMatch.label !== lastAppendedLabel.current) {
+      lastAppendedLabel.current = zonedMatch.label;
+      setRecognized((prev) => [...prev, zonedMatch.label]);
+      setDraft(zonedMatch.label);
+    }
+  }, [zonedMatch]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
   if (!active) {
-    return <ContactPicker onSelect={setContact} />;
+    return (
+      <ContactPicker
+        onSelect={(id) => {
+          setRecognized([]);
+          lastAppendedLabel.current = null;
+          setDraft(DEMO_DRAFT);
+          setContact(id);
+        }}
+      />
+    );
   }
 
   return (
     <Screen dark edgeToEdge>
       <CameraStage
+        ref={cameraStageRef}
         facing={facing}
         rounded={false}
         placeholderAlign="top"
@@ -75,6 +119,25 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             { paddingTop: insets.top, paddingBottom: insets.bottom },
           ]}
         >
+          <HandSkeleton
+            landmarks={zonedLandmarks}
+            width={windowWidth}
+            height={windowHeight}
+            mirror={facing === 'front'}
+          />
+
+          <View
+            pointerEvents="none"
+            style={[
+              styles.zone,
+              { top: zoneTop, height: zoneHalfHeight * 2 },
+            ]}
+          />
+
+          <View style={styles.guideWrap} pointerEvents="none">
+            <SignGuideCircle active={handDetected} size={GUIDE_SIZE} onComplete={handleGuideComplete} />
+          </View>
+
           <View style={[styles.callBar, { paddingHorizontal: theme.spacing.lg }]}>
             <IconButton
               name="chevron-left"
@@ -132,7 +195,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="label" style={[styles.onDark, styles.dim]}>
                 RECOGNIZED
               </Text>
-              <GlossChips tokens={recognized} tone="accent" />
+              <GlossBubbles tokens={recognized} />
             </View>
 
             <View
@@ -291,6 +354,20 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
 }
 
 const styles = StyleSheet.create({
+  /** Centers the placement guide over the live preview, above the call bar
+   *  and chrome but stacked below them here so those overlays' own touch
+   *  targets still win — the guide itself is pointerEvents="none". */
+  guideWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  /** Faint outline marking the active detection band — full width, taller
+   *  than the guide circle it surrounds. */
+  zone: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
   callBar: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -96,7 +96,7 @@ export const SEED_CHAT: ChatMessage[] = [
 
 /** The gloss sequence the call screen shows as "just recognized". */
 export const DEMO_RECOGNIZED = ['ME', 'NEED', 'METFORMIN', 'ONE', 'STRIP'];
-export const DEMO_DRAFT = 'I need one strip of Metformin, please';
+export const DEMO_DRAFT = 'Hi, I am Safar';
 
 export interface Contact {
   id: string;
