@@ -14,6 +14,7 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
+import { useLocalLlm } from '../llm/useLocalLlm';
 import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useTheme } from '../theme';
@@ -47,6 +48,13 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
+  // Up to 3 candidate readings for the current draft — genuinely different
+  // interpretations (e.g. "you" the driver vs "I" the driver), not 3
+  // rewordings of the same meaning, since the glosses alone can't say which
+  // role the signer has. `draft` is always one of these (or the raw gloss
+  // fallback when the LLM isn't ready); tapping an option in the UI below
+  // just changes which one `draft` points at.
+  const [draftOptions, setDraftOptions] = useState<string[]>([]);
   const [recognized, setRecognized] = useState<string[]>([]);
   // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
   // to-edge) screen, so the window size is the skeleton's coordinate space
@@ -60,6 +68,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const { frameProcessor, match, landmarks } = useLiveHandGestures();
   const lastAppendedLabel = useRef<string | null>(null);
   const cameraStageRef = useRef<CameraStageHandle>(null);
+
+  // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
+  // into a fluent sentence ("Where is the hospital?"). Loaded once per app
+  // session — see useLocalLlm.ts. Composes over the FULL recognized list on
+  // every completed hold, not per-frame: each hold already has a ~1s hold +
+  // 1.5s cooldown pause built into SignGuideCircle, so this fires once per
+  // deliberately-signed word, with growing context each time, rather than
+  // reacting to instantaneous per-frame matches.
+  const llm = useLocalLlm();
+  const composeRequestId = useRef(0);
 
   // Detection zone: full screen width, a band centered on the guide circle
   // but taller than it. A hand is only "detected" for the guide ring and
@@ -81,12 +99,45 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     // than appending on every frame a match happens to be known (that
     // produced duplicate/jittery entries as a held sign kept re-matching).
     cameraStageRef.current?.capture();
-    if (zonedMatch?.isKnown && zonedMatch.label !== lastAppendedLabel.current) {
-      lastAppendedLabel.current = zonedMatch.label;
-      setRecognized((prev) => [...prev, zonedMatch.label]);
-      setDraft(zonedMatch.label);
-    }
-  }, [zonedMatch]);
+    if (!zonedMatch?.isKnown || zonedMatch.label === lastAppendedLabel.current) return;
+
+    lastAppendedLabel.current = zonedMatch.label;
+    setRecognized((prev) => {
+      const updated = [...prev, zonedMatch.label];
+
+      if (llm.status === 'ready') {
+        // Compose over the WHOLE sequence so far, not just the new word —
+        // "WHERE" alone can't become "Where is the hospital?", but
+        // "WHERE HOSPITAL" together can. A race guard (requestId) discards
+        // a stale result if the user signs another word before this
+        // composition (a real LLM call, ~0.5-1.5s per llm-testbed) returns.
+        const requestId = ++composeRequestId.current;
+        llm
+          .composeSentenceOptions(updated)
+          .then((options) => {
+            if (composeRequestId.current !== requestId) return;
+            setDraftOptions(options);
+            setDraft(options[0] ?? updated.join(' '));
+          })
+          .catch(() => {
+            // LLM call failed — fall back to the raw gloss sequence rather
+            // than leaving the draft stuck on a stale sentence.
+            if (composeRequestId.current === requestId) {
+              setDraftOptions([]);
+              setDraft(updated.join(' '));
+            }
+          });
+      } else {
+        // Model not ready (still loading, missing, or errored) — never
+        // block signing on it. Show the raw glosses so the app stays
+        // usable; the LLM upgrades this to real options once ready.
+        setDraftOptions([]);
+        setDraft(updated.join(' '));
+      }
+
+      return updated;
+    });
+  }, [zonedMatch, llm]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
@@ -97,6 +148,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
           setRecognized([]);
           lastAppendedLabel.current = null;
           setDraft(DEMO_DRAFT);
+          setDraftOptions([]);
           setContact(id);
         }}
       />
@@ -175,6 +227,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
               </Text>
             </View>
+            {llm.status !== 'ready' ? (
+              <View style={[styles.pill, { marginLeft: theme.spacing.sm }]}>
+                <Text variant="caption" style={styles.onDark}>
+                  {llm.status === 'loading' && 'Loading on-device LLM…'}
+                  {llm.status === 'checking' && 'Checking for on-device model…'}
+                  {llm.status === 'missing' && 'LLM model not found — showing raw signs'}
+                  {llm.status === 'error' && 'LLM failed to load — showing raw signs'}
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.spacer} />
@@ -210,8 +272,55 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
                 {draft}
               </Text>
+
+              {draftOptions.length > 1 ? (
+                // The glosses alone can't say whether the signer is the
+                // customer or the driver ("ARRIVED HOME RIGHT LEFT" means
+                // opposite things either way) — rather than the LLM
+                // silently guessing, it offers a few genuinely different
+                // readings and the person picks the one matching their
+                // actual situation. Same confirmation-gate idea as the rest
+                // of the app: the LLM proposes, the human confirms.
+                <View style={{ gap: 6, marginTop: theme.spacing.md }}>
+                  <Text variant="label" style={[styles.onDark, styles.dim]}>
+                    WHO'S SPEAKING? PICK ONE
+                  </Text>
+                  {draftOptions.map((option, index) => {
+                    const selected = option === draft;
+                    return (
+                      <Pressable
+                        key={`${option}-${index}`}
+                        onPress={() => setDraft(option)}
+                        style={[
+                          styles.optionRow,
+                          {
+                            borderRadius: theme.radius.md,
+                            borderColor: selected ? theme.colors.accent : 'rgba(255,255,255,0.25)',
+                            backgroundColor: selected ? theme.colors.accentSoft : 'transparent',
+                          },
+                        ]}
+                      >
+                        <Text
+                          variant="body"
+                          style={selected ? undefined : styles.onDark}
+                          tone={selected ? 'accent' : undefined}
+                        >
+                          {option}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
               <View style={[styles.draftActions, { marginTop: theme.spacing.md }]}>
-                <Pressable onPress={() => setDraft(DEMO_DRAFT)} hitSlop={8}>
+                <Pressable
+                  onPress={() => {
+                    setDraft(DEMO_DRAFT);
+                    setDraftOptions([]);
+                  }}
+                  hitSlop={8}
+                >
                   <Text variant="caption" tone="accent">
                     Reset
                   </Text>
@@ -219,7 +328,13 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 <Text variant="caption" style={[styles.onDark, styles.dim]}>
                   ·
                 </Text>
-                <Pressable onPress={() => setDraft('')} hitSlop={8}>
+                <Pressable
+                  onPress={() => {
+                    setDraft('');
+                    setDraftOptions([]);
+                  }}
+                  hitSlop={8}
+                >
                   <Text variant="caption" tone="accent">
                     Clear
                   </Text>
@@ -408,6 +523,7 @@ const styles = StyleSheet.create({
    *  about to be spoken reads as the clear focal point of the chrome. */
   draftPanel: { backgroundColor: 'rgba(0,0,0,0.35)' },
   draftActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  optionRow: { borderWidth: StyleSheet.hairlineWidth * 2, paddingHorizontal: 12, paddingVertical: 8 },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
