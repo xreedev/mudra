@@ -84,11 +84,27 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const lastAppendedLabel = useRef<string | null>(null);
   const cameraStageRef = useRef<CameraStageHandle>(null);
 
+  // The receiver phone can talk back too — TCP is full-duplex, so whatever they say (spoken,
+  // transcribed to text on their end) arrives here as a plain message. Shown as a caption
+  // overlaid on the camera (see captionTimeoutRef below), the same idea as live captions on a
+  // video call: something to read without looking away from the signing guide. Auto-clears
+  // after a few seconds so a stale reply doesn't linger once the conversation has moved on.
+  const [caption, setCaption] = useState<string | null>(null);
+  const captionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleRelayMessage = useCallback((text: string) => {
+    setCaption(text);
+    if (captionTimeoutRef.current) clearTimeout(captionTimeoutRef.current);
+    captionTimeoutRef.current = setTimeout(() => setCaption(null), 6000);
+  }, []);
+  useEffect(() => () => {
+    if (captionTimeoutRef.current) clearTimeout(captionTimeoutRef.current);
+  }, []);
+
   // Same-WiFi relay to a second phone (see asl-relay-rn): scans for a receiver advertised on
   // the local network and auto-connects. "Confirm & speak" below speaks locally AND relays the
   // sentence to that phone, so a hearing person can hold the receiving phone instead of needing
   // to be within earshot.
-  const relay = useAslRelaySender();
+  const relay = useAslRelaySender(handleRelayMessage);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
   const speaker = useRef(new LocalSpeaker()).current;
   useEffect(() => () => speaker.stop(), [speaker]);
@@ -390,6 +406,27 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
 
           <View style={styles.spacer} />
 
+          {caption ? (
+            <View
+              style={[
+                styles.captionBubble,
+                {
+                  marginHorizontal: theme.spacing.lg,
+                  marginBottom: theme.spacing.md,
+                  borderRadius: theme.radius.lg,
+                  paddingHorizontal: theme.spacing.md,
+                  paddingVertical: theme.spacing.sm,
+                  gap: theme.spacing.xs,
+                },
+              ]}
+            >
+              <Icon name="mic" size={14} color="#FFFFFF" />
+              <Text variant="body" style={[styles.onDark, styles.captionText]}>
+                {caption}
+              </Text>
+            </View>
+          ) : null}
+
           <View
             style={[
               styles.chrome,
@@ -685,6 +722,14 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
 }
 
 const styles = StyleSheet.create({
+  /** The receiver's spoken-and-transcribed reply, floating over the camera just above the
+   *  chrome sheet — same "caption over the video" placement as live call captions. */
+  captionBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  captionText: { flex: 1 },
   /** Centers the placement guide over the live preview, above the call bar
    *  and chrome but stacked below them here so those overlays' own touch
    *  targets still win — the guide itself is pointerEvents="none". */

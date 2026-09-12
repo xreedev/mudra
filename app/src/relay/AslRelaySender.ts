@@ -27,7 +27,13 @@ export class AslRelaySender {
     return this.tcpSocket !== null && this.zeroconf !== null;
   }
 
-  start(onStateChange: (state: SenderState) => void): void {
+  /**
+   * `onMessage` is optional — TCP is full-duplex, so the same socket used to send also carries
+   * whatever the receiver phone sends back (e.g. a spoken reply transcribed to text), but a
+   * caller with nothing to do with that (Talk Aloud has no call partner to reply) can just omit
+   * it rather than wiring up a no-op.
+   */
+  start(onStateChange: (state: SenderState) => void, onMessage?: (text: string) => void): void {
     const ZeroconfCtor = this.zeroconf?.default;
     if (!ZeroconfCtor || this.zeroconfInstance) return;
 
@@ -36,7 +42,7 @@ export class AslRelaySender {
 
     zeroconf.on('resolved', (service) => {
       if (this.socket || this.connecting || !service.host || !service.port) return;
-      this.connect(service.host, service.port, service.name, onStateChange);
+      this.connect(service.host, service.port, service.name, onStateChange, onMessage);
     });
     zeroconf.on('error', () => onStateChange({ status: 'unavailable', peerName: null }));
 
@@ -49,6 +55,7 @@ export class AslRelaySender {
     port: number,
     name: string,
     onStateChange: (state: SenderState) => void,
+    onMessage?: (text: string) => void,
   ): void {
     const tcpSocket = this.tcpSocket;
     if (!tcpSocket) return;
@@ -60,6 +67,21 @@ export class AslRelaySender {
       this.connecting = false;
       onStateChange({ status: 'connected', peerName: name });
     });
+    if (onMessage) {
+      // Newline-delimited, matching sendText's own framing and the receiver's parser for the
+      // outgoing direction — one buffer per connection so a message split across TCP packets
+      // still reassembles correctly.
+      let buffer = '';
+      socket.on('data', (data) => {
+        buffer += data.toString();
+        let index;
+        while ((index = buffer.indexOf('\n')) >= 0) {
+          const text = buffer.slice(0, index).trim();
+          buffer = buffer.slice(index + 1);
+          if (text) onMessage(text);
+        }
+      });
+    }
     socket.on('error', () => {
       this.connecting = false;
       onStateChange({ status: 'disconnected', peerName: null });

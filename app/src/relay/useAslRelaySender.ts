@@ -11,17 +11,23 @@ export type SenderRelayStatus = SenderState & {
  * screen mounts, auto-connecting to the first one found. `sendText` is always safe to call —
  * it's a no-op until a receiver is actually connected — so callers don't need to branch on
  * connection state just to speak a confirmed sentence.
+ *
+ * `onMessage` is optional: the same connection is full-duplex, so a receiver phone can talk
+ * back (e.g. a spoken reply transcribed locally on their end) — pass a callback to receive
+ * those, or omit it entirely for a caller (Talk Aloud) with no call partner to reply to.
  */
-export function useAslRelaySender(): SenderRelayStatus {
+export function useAslRelaySender(onMessage?: (text: string) => void): SenderRelayStatus {
   const sender = useRef<AslRelaySender | null>(null);
   const [state, setState] = useState<SenderState>({ status: 'scanning', peerName: null });
   const [available, setAvailable] = useState(false);
+  const onMessageRef = useRef(onMessage);
+  onMessageRef.current = onMessage;
 
   useEffect(() => {
     const instance = new AslRelaySender();
     sender.current = instance;
     setAvailable(instance.isAvailable());
-    instance.start(setState);
+    instance.start(setState, (text) => onMessageRef.current?.(text));
 
     return () => {
       instance.stop();

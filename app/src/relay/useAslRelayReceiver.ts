@@ -6,6 +6,9 @@ export type ReceiverRelayStatus = {
   status: ReceiverStatus;
   /** Most recent message first. */
   messages: string[];
+  /** Talks back to the connected signer's phone — a no-op until one is actually connected, so
+   *  callers (a "talk back" mic on the Receive screen) don't need to branch on connection state. */
+  sendText: (text: string) => void;
 };
 
 /**
@@ -39,5 +42,5 @@ export function useAslRelayReceiver(onMessage: (text: string) => void): Receiver
     };
   }, []);
 
-  return { available, status, messages };
+  return { available, status, messages, sendText: (text: string) => receiver.current?.sendText(text) };
 }
