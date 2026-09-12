@@ -19,7 +19,9 @@ export type IconName =
   | 'mic-off'
   | 'send'
   | 'lock'
-  | 'pin';
+  | 'pin'
+  | 'volume'
+  | 'stop';
 
 export interface IconProps {
   name: IconName;
@@ -166,6 +168,15 @@ function renderPaths(name: IconName, common: StrokeProps, stroke: string) {
           <Circle {...common} cx={12} cy={10.5} r={2.4} />
         </>
       );
+    case 'volume':
+      return (
+        <>
+          <Path {...common} d="M4.5 9.5h3.2L12 6v12l-4.3-3.5H4.5v-5Z" />
+          <Path {...common} d="M16 9a4.5 4.5 0 0 1 0 6M18.3 6.8a8 8 0 0 1 0 10.4" />
+        </>
+      );
+    case 'stop':
+      return <Rect {...common} x={6} y={6} width={12} height={12} rx={2.5} fill={stroke} />;
     default:
       return null;
   }
