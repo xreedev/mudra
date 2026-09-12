@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -16,6 +16,8 @@ import {
 import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
+import { useAslRelaySender } from '../relay/useAslRelaySender';
+import { LocalSpeaker, type SpeakingState } from '../speech/LocalSpeaker';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -67,6 +69,21 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const { frameProcessor, match, landmarks, templates } = useLiveHandGestures();
   const lastAppendedLabel = useRef<string | null>(null);
   const cameraStageRef = useRef<CameraStageHandle>(null);
+
+  // Same-WiFi relay to a second phone (see asl-relay-rn): scans for a receiver advertised on
+  // the local network and auto-connects. "Confirm & speak" below speaks locally AND relays the
+  // sentence to that phone, so a hearing person can hold the receiving phone instead of needing
+  // to be within earshot.
+  const relay = useAslRelaySender();
+  const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
+  const speaker = useRef(new LocalSpeaker()).current;
+  useEffect(() => () => speaker.stop(), [speaker]);
+
+  const speakDraft = useCallback(() => {
+    if (!draft.trim()) return;
+    speaker.speak(draft, setSpeakingState);
+    relay.sendText(draft);
+  }, [draft, speaker, relay]);
 
   // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
   // into a fluent sentence ("Where is the hospital?"). Loaded once per app
@@ -200,7 +217,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               accessibilityLabel="End and go back"
               variant="translucent"
               size={38}
-              onPress={() => navigation.goBack()}
+              onPress={() => {
+                speaker.stop();
+                navigation.goBack();
+              }}
             />
             <View style={styles.callBarTitle}>
               <Text variant="bodyStrong" style={styles.onDark}>
@@ -245,6 +265,25 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 Signing · {templates.length} templates on device
               </Text>
             </View>
+            {relay.available ? (
+              <View
+                style={[
+                  styles.pill,
+                  {
+                    marginLeft: theme.spacing.sm,
+                    paddingHorizontal: theme.spacing.sm,
+                    paddingVertical: theme.spacing.xs,
+                  },
+                ]}
+              >
+                <Text variant="caption" style={styles.onDark}>
+                  {relay.status === 'connected' && `Relay · sending to ${relay.peerName}`}
+                  {relay.status === 'scanning' && 'Relay · looking for a receiver phone'}
+                  {relay.status === 'connecting' && 'Relay · connecting…'}
+                  {relay.status === 'disconnected' && 'Relay · not connected'}
+                </Text>
+              </View>
+            ) : null}
             {llm.status !== 'ready' ? (
               <View
                 style={[
@@ -394,13 +433,18 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             </View>
 
             <Button
-              label="Confirm & speak"
-              icon="check"
+              label={speakingState === 'speaking' ? 'Stop' : 'Confirm & speak'}
+              icon={speakingState === 'speaking' ? 'stop' : 'check'}
               size="lg"
               block
               disabled={draft.trim().length === 0}
-              onPress={() => undefined}
+              onPress={() => (speakingState === 'speaking' ? speaker.stop() : speakDraft())}
             />
+            {speakingState === 'unavailable' ? (
+              <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                Voice output needs a development build with react-native-tts linked.
+              </Text>
+            ) : null}
 
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
               <IconButton
@@ -416,7 +460,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 accessibilityLabel="End call"
                 variant="danger"
                 size={64}
-                onPress={() => navigation.goBack()}
+                onPress={() => {
+                  speaker.stop();
+                  navigation.goBack();
+                }}
               />
               <IconButton
                 name="chat"

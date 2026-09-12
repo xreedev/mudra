@@ -7,6 +7,7 @@ import {
   ChatScreen,
   HomeScreen,
   MemoryScreen,
+  ReceiveScreen,
   TalkAloudScreen,
 } from '../screens';
 import { useTheme } from '../theme';
@@ -49,6 +50,7 @@ export function RootNavigator() {
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Call" component={CallScreen} />
         <Stack.Screen name="TalkAloud" component={TalkAloudScreen} />
+        <Stack.Screen name="Receive" component={ReceiveScreen} />
         <Stack.Screen name="Memory" component={MemoryScreen} />
         <Stack.Screen name="AddSign" component={AddSignScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
