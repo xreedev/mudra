@@ -43,15 +43,33 @@ export interface CameraStageHandle {
 
 export interface CameraStageProps {
   facing?: 'front' | 'back';
+  /**
+   * A VisionCamera frame processor (from `useFrameProcessor`) — runs
+   * real-time detection (e.g. hand-landmark recognition) on every camera
+   * frame. Requires `newArchEnabled=false` in this build: VisionCamera's
+   * Frame Processor JSI proxy doesn't yet support Bridgeless mode, which
+   * RN 0.76's stock Android template otherwise couples to New Architecture.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  frameProcessor?: any;
   /** Overlay content rendered on top of the preview. */
   children?: React.ReactNode;
   /** Rounded corners for an inset preview; square for a full-bleed one. */
   rounded?: boolean;
+  /**
+   * Where the "camera access needed" placeholder sits when there's no live
+   * preview yet. Default `'center'` (unchanged, used by AddSignScreen's
+   * framed capture box). Pass `'top'` when `children` renders a large fixed
+   * bottom panel over the stage (e.g. CallScreen's floating call chrome) —
+   * otherwise the centered placeholder's own "Allow camera" button can end
+   * up sitting underneath that panel, unreachable.
+   */
+  placeholderAlign?: 'center' | 'top';
   style?: StyleProp<ViewStyle>;
 }
 
 export const CameraStage = forwardRef<CameraStageHandle, CameraStageProps>(function CameraStage(
-  { facing = 'front', children, rounded = true, style },
+  { facing = 'front', frameProcessor, children, rounded = true, placeholderAlign = 'center', style },
   ref,
 ) {
   const theme = useTheme();
@@ -138,9 +156,11 @@ export const CameraStage = forwardRef<CameraStageHandle, CameraStageProps>(funct
           device={device}
           isActive
           photo
+          frameProcessor={frameProcessor}
+          pixelFormat="yuv"
         />
       ) : (
-        <Placeholder status={status} onRequestPermission={requestPermission} />
+        <Placeholder status={status} onRequestPermission={requestPermission} align={placeholderAlign} />
       )}
       {children ? <View style={StyleSheet.absoluteFill}>{children}</View> : null}
     </View>
@@ -188,16 +208,24 @@ const COPY: Record<Exclude<Status, 'ready'>, { title: string; body: string }> = 
 function Placeholder({
   status,
   onRequestPermission,
+  align,
 }: {
   status: Status;
   onRequestPermission: () => void;
+  align: 'center' | 'top';
 }) {
   const theme = useTheme();
   if (status === 'ready') return null;
   const copy = COPY[status];
 
   return (
-    <View style={[styles.placeholder, { padding: theme.spacing['2xl'] }]}>
+    <View
+      style={[
+        styles.placeholder,
+        align === 'top' ? styles.placeholderTop : styles.placeholderCenter,
+        { padding: theme.spacing['2xl'] },
+      ]}
+    >
       <View style={styles.placeholderBadge}>
         <Icon name="sign" size={24} color="#FFFFFF" />
       </View>
@@ -221,7 +249,11 @@ function Placeholder({
 
 const styles = StyleSheet.create({
   stage: { flex: 1, overflow: 'hidden' },
-  placeholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  placeholder: { ...StyleSheet.absoluteFillObject, alignItems: 'center', gap: 8 },
+  placeholderCenter: { justifyContent: 'center' },
+  /** Sits in the upper third instead of dead-center, so it can never end up
+   *  underneath a large bottom overlay panel rendered as `children`. */
+  placeholderTop: { justifyContent: 'flex-start', paddingTop: '18%' },
   placeholderBadge: {
     width: 52,
     height: 52,

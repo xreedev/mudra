@@ -1,31 +1,46 @@
-import React, { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import React, { useCallback, useRef, useState } from 'react';
+import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   Button,
   CameraStage,
-  Card,
-  GlossChips,
+  type CameraStageHandle,
+  GlossBubbles,
+  HandSkeleton,
   Icon,
   IconButton,
   Screen,
+  SignGuideCircle,
   Text,
 } from '../components';
-import { DEMO_DRAFT, DEMO_RECOGNIZED, SEED_CONTACTS } from '../data/mock';
+import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
+import { useLocalLlm } from '../llm/useLocalLlm';
+import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
+import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
  * Call someone.
  *
- * Two states, one screen: pick who to call, then the live call. Live layout is
- * camera-first — signing is the input method, so the preview gets the room — with the
- * recognized glosses and the draft sentence stacked directly under it, and the call controls
- * pinned where the thumb already is.
+ * Two states, one screen: pick who to call, then the live call. Live layout is a
+ * full-bleed camera behind everything — signing is the input method, so the preview
+ * gets the whole screen — with the call bar, recognized glosses, draft sentence, and
+ * call controls floating on top of it as translucent overlays, the way a normal video
+ * call's chrome floats over the video rather than displacing it.
  *
  * The draft is never spoken until "Confirm & speak" is pressed. That gate is the whole safety
  * model of the product, so it is a full-width primary button and nothing sits near it.
  */
+
+/** Diameter of the white placement guide — kept in sync with the rectangle below. */
+const GUIDE_SIZE = 300;
+/** How far the detection zone extends above/below the circle. Full screen width,
+ *  just a taller band than the circle itself — a hand anywhere sideways in frame
+ *  still counts as long as it's roughly at sign height, but a hand held too low
+ *  or too high (e.g. resting at your side, or waving near your face) doesn't. */
+const ZONE_PADDING = 50;
+
 export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -33,137 +48,335 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
+  // Up to 3 candidate readings for the current draft — genuinely different
+  // interpretations (e.g. "you" the driver vs "I" the driver), not 3
+  // rewordings of the same meaning, since the glosses alone can't say which
+  // role the signer has. `draft` is always one of these (or the raw gloss
+  // fallback when the LLM isn't ready); tapping an option in the UI below
+  // just changes which one `draft` points at.
+  const [draftOptions, setDraftOptions] = useState<string[]>([]);
+  const [recognized, setRecognized] = useState<string[]>([]);
+  // The CameraStage is styled StyleSheet.absoluteFill over the whole (edge-
+  // to-edge) screen, so the window size is the skeleton's coordinate space
+  // — reading it this way avoids the race of waiting on an onLayout
+  // measurement that can still be 0,0 on the frames the skeleton needs it.
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
+  // Real hand-landmark detection (HandLandmarksFrameProcessorPlugin.kt,
+  // wrapping MediaPipe's HandLandmarker) matched against the bundled
+  // gesture templates every frame.
+  const { frameProcessor, match, landmarks } = useLiveHandGestures();
+  const lastAppendedLabel = useRef<string | null>(null);
+  const cameraStageRef = useRef<CameraStageHandle>(null);
+
+  // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
+  // into a fluent sentence ("Where is the hospital?"). Loaded once per app
+  // session — see useLocalLlm.ts. Composes over the FULL recognized list on
+  // every completed hold, not per-frame: each hold already has a ~1s hold +
+  // 1.5s cooldown pause built into SignGuideCircle, so this fires once per
+  // deliberately-signed word, with growing context each time, rather than
+  // reacting to instantaneous per-frame matches.
+  const llm = useLocalLlm();
+  const composeRequestId = useRef(0);
+
+  // Detection zone: full screen width, a band centered on the guide circle
+  // but taller than it. A hand is only "detected" for the guide ring and
+  // recognition if its wrist falls inside this band — MediaPipe itself
+  // still runs on the whole frame, but a hand elsewhere in shot (resting,
+  // passing through background) is ignored rather than triggering a hold.
+  const zoneHalfHeight = GUIDE_SIZE / 2 + ZONE_PADDING;
+  const zoneTop = windowHeight / 2 - zoneHalfHeight;
+  const zoneBottom = windowHeight / 2 + zoneHalfHeight;
+  const wrist = landmarks?.[0] ?? null;
+  const inZone = !!wrist && wrist.y * windowHeight >= zoneTop && wrist.y * windowHeight <= zoneBottom;
+  const zonedLandmarks = inZone ? landmarks : null;
+  const zonedMatch = inZone ? match : null;
+  const handDetected = !!zonedLandmarks && zonedLandmarks.length > 0;
+
+  const handleGuideComplete = useCallback(() => {
+    // The white guide ring completing a hold is the "shutter" — snapshot
+    // whatever sign is being held at that instant and process it, rather
+    // than appending on every frame a match happens to be known (that
+    // produced duplicate/jittery entries as a held sign kept re-matching).
+    cameraStageRef.current?.capture();
+    if (!zonedMatch?.isKnown || zonedMatch.label === lastAppendedLabel.current) return;
+
+    lastAppendedLabel.current = zonedMatch.label;
+    setRecognized((prev) => {
+      const updated = [...prev, zonedMatch.label];
+
+      if (llm.status === 'ready') {
+        // Compose over the WHOLE sequence so far, not just the new word —
+        // "WHERE" alone can't become "Where is the hospital?", but
+        // "WHERE HOSPITAL" together can. A race guard (requestId) discards
+        // a stale result if the user signs another word before this
+        // composition (a real LLM call, ~0.5-1.5s per llm-testbed) returns.
+        const requestId = ++composeRequestId.current;
+        llm
+          .composeSentenceOptions(updated)
+          .then((options) => {
+            if (composeRequestId.current !== requestId) return;
+            setDraftOptions(options);
+            setDraft(options[0] ?? updated.join(' '));
+          })
+          .catch(() => {
+            // LLM call failed — fall back to the raw gloss sequence rather
+            // than leaving the draft stuck on a stale sentence.
+            if (composeRequestId.current === requestId) {
+              setDraftOptions([]);
+              setDraft(updated.join(' '));
+            }
+          });
+      } else {
+        // Model not ready (still loading, missing, or errored) — never
+        // block signing on it. Show the raw glosses so the app stays
+        // usable; the LLM upgrades this to real options once ready.
+        setDraftOptions([]);
+        setDraft(updated.join(' '));
+      }
+
+      return updated;
+    });
+  }, [zonedMatch, llm]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
   if (!active) {
-    return <ContactPicker onSelect={setContact} />;
+    return (
+      <ContactPicker
+        onSelect={(id) => {
+          setRecognized([]);
+          lastAppendedLabel.current = null;
+          setDraft(DEMO_DRAFT);
+          setDraftOptions([]);
+          setContact(id);
+        }}
+      />
+    );
   }
 
   return (
     <Screen dark edgeToEdge>
-      <View style={[styles.callBar, { paddingHorizontal: theme.spacing.lg }]}>
-        <IconButton
-          name="chevron-left"
-          accessibilityLabel="End and go back"
-          variant="translucent"
-          size={38}
-          onPress={() => navigation.goBack()}
-        />
-        <View style={styles.callBarTitle}>
-          <Text variant="bodyStrong" style={styles.onDark}>
-            {active.name}
-          </Text>
-          <Text variant="caption" style={[styles.onDark, styles.dim]}>
-            Connected · 00:42
-          </Text>
-        </View>
-        <View style={styles.liveBadge}>
-          <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
-          <Text variant="caption" style={styles.onDark}>
-            LIVE
-          </Text>
-        </View>
-      </View>
+      <CameraStage
+        ref={cameraStageRef}
+        facing={facing}
+        rounded={false}
+        placeholderAlign="top"
+        frameProcessor={frameProcessor}
+        style={StyleSheet.absoluteFill}
+      >
+        <View
+          style={[
+            styles.overlay,
+            { paddingTop: insets.top, paddingBottom: insets.bottom },
+          ]}
+        >
+          <HandSkeleton
+            landmarks={zonedLandmarks}
+            width={windowWidth}
+            height={windowHeight}
+            mirror={facing === 'front'}
+          />
 
-      <CameraStage facing={facing} rounded={false} style={styles.preview}>
-        <View style={[styles.previewOverlay, { padding: theme.spacing.lg }]}>
-          <View style={styles.overlayTop}>
-            <View style={styles.pill}>
-              <Text variant="caption" style={styles.onDark}>
-                Signing · on device
+          <View
+            pointerEvents="none"
+            style={[
+              styles.zone,
+              { top: zoneTop, height: zoneHalfHeight * 2 },
+            ]}
+          />
+
+          <View style={styles.guideWrap} pointerEvents="none">
+            <SignGuideCircle active={handDetected} size={GUIDE_SIZE} onComplete={handleGuideComplete} />
+          </View>
+
+          <View style={[styles.callBar, { paddingHorizontal: theme.spacing.lg }]}>
+            <IconButton
+              name="chevron-left"
+              accessibilityLabel="End and go back"
+              variant="translucent"
+              size={38}
+              onPress={() => navigation.goBack()}
+            />
+            <View style={styles.callBarTitle}>
+              <Text variant="bodyStrong" style={styles.onDark}>
+                {active.name}
+              </Text>
+              <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                Connected · 00:42
               </Text>
             </View>
-          </View>
-          <View style={styles.overlayBottom}>
+            <View style={styles.liveBadge}>
+              <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
+              <Text variant="caption" style={styles.onDark}>
+                LIVE
+              </Text>
+            </View>
             <IconButton
               name="flip"
               accessibilityLabel="Switch camera"
               variant="translucent"
-              size={40}
+              size={38}
               onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
             />
           </View>
+
+          <View style={[styles.pillRow, { paddingHorizontal: theme.spacing.lg }]}>
+            <View style={styles.pill}>
+              <Text variant="caption" style={styles.onDark}>
+                Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
+              </Text>
+            </View>
+            {llm.status !== 'ready' ? (
+              <View style={[styles.pill, { marginLeft: theme.spacing.sm }]}>
+                <Text variant="caption" style={styles.onDark}>
+                  {llm.status === 'loading' && 'Loading on-device LLM…'}
+                  {llm.status === 'checking' && 'Checking for on-device model…'}
+                  {llm.status === 'missing' && 'LLM model not found — showing raw signs'}
+                  {llm.status === 'error' && 'LLM failed to load — showing raw signs'}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.spacer} />
+
+          <View
+            style={[
+              styles.chrome,
+              {
+                paddingHorizontal: theme.spacing.lg,
+                paddingTop: theme.spacing.xl,
+                borderTopLeftRadius: theme.radius['2xl'],
+                borderTopRightRadius: theme.radius['2xl'],
+                gap: theme.spacing.md,
+              },
+            ]}
+          >
+            <View style={{ gap: theme.spacing.sm }}>
+              <Text variant="label" style={[styles.onDark, styles.dim]}>
+                RECOGNIZED
+              </Text>
+              <GlossBubbles tokens={recognized} />
+            </View>
+
+            <View
+              style={[
+                styles.draftPanel,
+                { borderRadius: theme.radius.lg, padding: theme.spacing.lg },
+              ]}
+            >
+              <Text variant="label" style={[styles.onDark, styles.dim]}>
+                WILL BE SPOKEN
+              </Text>
+              <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
+                {draft}
+              </Text>
+
+              {draftOptions.length > 1 ? (
+                // The glosses alone can't say whether the signer is the
+                // customer or the driver ("ARRIVED HOME RIGHT LEFT" means
+                // opposite things either way) — rather than the LLM
+                // silently guessing, it offers a few genuinely different
+                // readings and the person picks the one matching their
+                // actual situation. Same confirmation-gate idea as the rest
+                // of the app: the LLM proposes, the human confirms.
+                <View style={{ gap: 6, marginTop: theme.spacing.md }}>
+                  <Text variant="label" style={[styles.onDark, styles.dim]}>
+                    WHO'S SPEAKING? PICK ONE
+                  </Text>
+                  {draftOptions.map((option, index) => {
+                    const selected = option === draft;
+                    return (
+                      <Pressable
+                        key={`${option}-${index}`}
+                        onPress={() => setDraft(option)}
+                        style={[
+                          styles.optionRow,
+                          {
+                            borderRadius: theme.radius.md,
+                            borderColor: selected ? theme.colors.accent : 'rgba(255,255,255,0.25)',
+                            backgroundColor: selected ? theme.colors.accentSoft : 'transparent',
+                          },
+                        ]}
+                      >
+                        <Text
+                          variant="body"
+                          style={selected ? undefined : styles.onDark}
+                          tone={selected ? 'accent' : undefined}
+                        >
+                          {option}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
+
+              <View style={[styles.draftActions, { marginTop: theme.spacing.md }]}>
+                <Pressable
+                  onPress={() => {
+                    setDraft(DEMO_DRAFT);
+                    setDraftOptions([]);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text variant="caption" tone="accent">
+                    Reset
+                  </Text>
+                </Pressable>
+                <Text variant="caption" style={[styles.onDark, styles.dim]}>
+                  ·
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setDraft('');
+                    setDraftOptions([]);
+                  }}
+                  hitSlop={8}
+                >
+                  <Text variant="caption" tone="accent">
+                    Clear
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <Button
+              label="Confirm & speak"
+              icon="check"
+              size="lg"
+              block
+              disabled={draft.trim().length === 0}
+              onPress={() => undefined}
+            />
+
+            <View style={styles.controls}>
+              <IconButton
+                name="mic-off"
+                accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+                variant={muted ? 'accent' : 'translucent'}
+                size={52}
+                onPress={() => setMuted(!muted)}
+              />
+              <IconButton
+                name="close"
+                accessibilityLabel="End call"
+                variant="danger"
+                size={64}
+                onPress={() => navigation.goBack()}
+              />
+              <IconButton
+                name="chat"
+                accessibilityLabel="Show transcript"
+                variant="translucent"
+                size={52}
+                onPress={() => undefined}
+              />
+            </View>
+          </View>
         </View>
       </CameraStage>
-
-      <View
-        style={[
-          styles.sheet,
-          {
-            backgroundColor: theme.colors.background,
-            borderTopLeftRadius: theme.radius['2xl'],
-            borderTopRightRadius: theme.radius['2xl'],
-            padding: theme.spacing.xl,
-            paddingBottom: insets.bottom + theme.spacing.lg,
-            gap: theme.spacing.lg,
-          },
-        ]}
-      >
-        <View style={{ gap: theme.spacing.sm }}>
-          <Text variant="label" tone="muted">
-            RECOGNIZED
-          </Text>
-          <GlossChips tokens={DEMO_RECOGNIZED} tone="accent" />
-        </View>
-
-        <Card tone="flat">
-          <Text variant="label" tone="muted">
-            WILL BE SPOKEN
-          </Text>
-          <Text variant="heading" style={{ marginTop: theme.spacing.sm }}>
-            {draft}
-          </Text>
-          <View style={[styles.draftActions, { marginTop: theme.spacing.md }]}>
-            <Pressable onPress={() => setDraft(DEMO_DRAFT)} hitSlop={8}>
-              <Text variant="caption" tone="accent">
-                Reset
-              </Text>
-            </Pressable>
-            <Text variant="caption" tone="muted">
-              ·
-            </Text>
-            <Pressable onPress={() => setDraft('')} hitSlop={8}>
-              <Text variant="caption" tone="accent">
-                Clear
-              </Text>
-            </Pressable>
-          </View>
-        </Card>
-
-        <Button
-          label="Confirm & speak"
-          icon="check"
-          size="lg"
-          block
-          disabled={draft.trim().length === 0}
-          onPress={() => undefined}
-        />
-
-        <View style={styles.controls}>
-          <IconButton
-            name="mic-off"
-            accessibilityLabel={muted ? 'Unmute' : 'Mute'}
-            variant={muted ? 'accent' : 'surface'}
-            size={52}
-            onPress={() => setMuted(!muted)}
-          />
-          <IconButton
-            name="close"
-            accessibilityLabel="End call"
-            variant="danger"
-            size={64}
-            onPress={() => navigation.goBack()}
-          />
-          <IconButton
-            name="chat"
-            accessibilityLabel="Show transcript"
-            variant="surface"
-            size={52}
-            onPress={() => undefined}
-          />
-        </View>
-      </View>
     </Screen>
   );
 }
@@ -256,6 +469,20 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
 }
 
 const styles = StyleSheet.create({
+  /** Centers the placement guide over the live preview, above the call bar
+   *  and chrome but stacked below them here so those overlays' own touch
+   *  targets still win — the guide itself is pointerEvents="none". */
+  guideWrap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  /** Faint outline marking the active detection band — full width, taller
+   *  than the guide circle it surrounds. */
+  zone: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
   callBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -275,18 +502,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.16)',
   },
   liveDot: { width: 7, height: 7, borderRadius: 4 },
-  preview: { flex: 1 },
-  previewOverlay: { flex: 1, justifyContent: 'space-between' },
-  overlayTop: { flexDirection: 'row' },
-  overlayBottom: { flexDirection: 'row', justifyContent: 'flex-end' },
+  /** Everything floats over the full-bleed camera: call bar pinned top, chrome
+   *  pinned bottom, the middle left empty so the live preview stays visible. */
+  overlay: { flex: 1, justifyContent: 'flex-start' },
+  pillRow: { flexDirection: 'row', marginTop: 10 },
   pill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 999,
     backgroundColor: 'rgba(0,0,0,0.4)',
   },
-  sheet: { marginTop: -24 },
+  spacer: { flex: 1 },
+  /** A translucent scrim behind ALL the floating bottom chrome, not just the
+   *  draft text — bare text over unpredictable live video is unreadable, the
+   *  same reason every real video-call UI (FaceTime, WhatsApp) scrims its
+   *  overlay chrome rather than relying on per-element panels. Still shows
+   *  the camera through it, unlike the old opaque bottom sheet. */
+  chrome: { paddingBottom: 8, backgroundColor: 'rgba(0,0,0,0.4)' },
+  /** A slightly darker panel just for the draft text, so the sentence that's
+   *  about to be spoken reads as the clear focal point of the chrome. */
+  draftPanel: { backgroundColor: 'rgba(0,0,0,0.35)' },
   draftActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  optionRow: { borderWidth: StyleSheet.hairlineWidth * 2, paddingHorizontal: 12, paddingVertical: 8 },
   controls: {
     flexDirection: 'row',
     alignItems: 'center',
