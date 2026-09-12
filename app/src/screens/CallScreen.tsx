@@ -11,6 +11,7 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT, DEMO_RECOGNIZED, SEED_CONTACTS } from '../data/mock';
+import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -83,6 +84,14 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               size={38}
               onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
             />
+          </View>
+
+          <View style={[styles.pillRow, { paddingHorizontal: theme.spacing.lg }]}>
+            <View style={styles.pill}>
+              <Text variant="caption" style={styles.onDark}>
+                Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
+              </Text>
+            </View>
           </View>
 
           <View style={styles.spacer} />
@@ -284,6 +293,13 @@ const styles = StyleSheet.create({
   /** Everything floats over the full-bleed camera: call bar pinned top, chrome
    *  pinned bottom, the middle left empty so the live preview stays visible. */
   overlay: { flex: 1, justifyContent: 'flex-start' },
+  pillRow: { flexDirection: 'row', marginTop: 10 },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
   spacer: { flex: 1 },
   /** A translucent scrim behind ALL the floating bottom chrome, not just the
    *  draft text — bare text over unpredictable live video is unreadable, the
