@@ -12,6 +12,7 @@ import {
   Text,
 } from '../components';
 import { DEMO_DRAFT, DEMO_RECOGNIZED, SEED_CONTACTS } from '../data/mock';
+import { BUNDLED_GESTURE_TEMPLATES } from '../recognition';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -71,7 +72,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
           <View style={styles.overlayTop}>
             <View style={styles.pill}>
               <Text variant="caption" style={styles.onDark}>
-                Signing · on device
+                Signing · {BUNDLED_GESTURE_TEMPLATES.length} templates on device
               </Text>
             </View>
           </View>
