@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The memory layer is entirely on-device: no permissions, no network, no exported components.
+  Nothing a user confirms ever leaves the phone through this module.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
