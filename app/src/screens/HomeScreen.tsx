@@ -1,7 +1,6 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Icon, Screen, Text, Tile } from '../components';
-import { SEED_MEMORIES } from '../data/mock';
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -51,9 +50,8 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           />
           <Tile
             title="Memory"
-            description="Phrases you have confirmed"
+            description="Sentences remembered from signing"
             icon="memory"
-            meta={`${SEED_MEMORIES.length} saved`}
             onPress={() => navigation.navigate('Memory')}
           />
         </View>
