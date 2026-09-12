@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -90,6 +90,11 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // reacting to instantaneous per-frame matches.
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
+  // Tracks the draft value WE last set programmatically (as opposed to one
+  // the user picked) — lets a later backfill (see the llm.status effect
+  // below) upgrade `draftOptions` without ever clobbering a choice the user
+  // already made.
+  const autoDraftRef = useRef<string>(DEMO_DRAFT);
 
   // Once a sentence is confirmed & spoken, the recognized-signs panel closes
   // and the draft resets — the confirmation is the end of that "turn", so
@@ -99,11 +104,61 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const resetRecognition = useCallback(() => {
     composeRequestId.current += 1;
     lastAppendedLabel.current = null;
+    autoDraftRef.current = DEMO_DRAFT;
     setRecognized([]);
     setDraftOptions([]);
     setRememberedSentence(undefined);
     setDraft(DEMO_DRAFT);
   }, []);
+
+  // The one place a sign sequence's remembered pick + LLM options are looked
+  // up and merged — called both when a new sign completes (below) and, via
+  // the effect further down, to backfill LLM options for the CURRENT
+  // sequence once the model finishes loading (it's often still "loading"
+  // partway through a sign sequence — never blocking signing on it means
+  // the LLM's 2 readings can otherwise never appear for that sequence).
+  const composeForSequence = useCallback(
+    (sequence: string[]) => {
+      const requestId = ++composeRequestId.current;
+
+      (async () => {
+        // Independent of the LLM: has the user picked a sentence for this
+        // EXACT sign sequence before? If so it always leads the list.
+        const remembered = await getRememberedSentence(sequence).catch(() => undefined);
+        if (composeRequestId.current !== requestId) return;
+        setRememberedSentence(remembered);
+
+        let options: string[] = [];
+        if (llm.status === 'ready') {
+          // Compose over the WHOLE sequence so far, not just the new word —
+          // "WHERE" alone can't become "Where is the hospital?", but
+          // "WHERE HOSPITAL" together can.
+          try {
+            options = await llm.composeSentenceOptions(sequence);
+          } catch {
+            // LLM call failed — fall back to the remembered pick (if any)
+            // or the raw gloss sequence, rather than leaving the draft
+            // stuck on a stale sentence.
+            options = [];
+          }
+          if (composeRequestId.current !== requestId) return;
+        }
+        // else: model not ready (still loading, missing, or errored) —
+        // never block signing on it. Show the remembered pick if there is
+        // one, else the raw glosses; the effect below upgrades this once
+        // the model becomes ready.
+
+        const merged = withRememberedSentence(remembered, options);
+        const nextDraft = merged[0] ?? sequence.join(' ');
+        setDraftOptions(merged);
+        // Only move the draft if it's still pointing at whatever WE set it
+        // to last time — never overwrite a sentence the user has picked.
+        setDraft((prev) => (prev === autoDraftRef.current ? nextDraft : prev));
+        autoDraftRef.current = nextDraft;
+      })();
+    },
+    [llm],
+  );
 
   // Detection zone: full screen width, a band centered on the guide circle
   // but taller than it. A hand is only "detected" for the guide ring and
@@ -130,49 +185,26 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     lastAppendedLabel.current = zonedMatch.label;
     setRecognized((prev) => {
       const updated = [...prev, zonedMatch.label];
-      // A race guard (requestId) discards a stale result if the user signs
-      // another word before this sequence's lookup/composition returns.
-      const requestId = ++composeRequestId.current;
-
-      (async () => {
-        // Independent of the LLM: has the user picked a sentence for this
-        // EXACT sign sequence before? If so it always leads the list.
-        const remembered = await getRememberedSentence(updated).catch(() => undefined);
-        if (composeRequestId.current !== requestId) return;
-        setRememberedSentence(remembered);
-
-        if (llm.status === 'ready') {
-          // Compose over the WHOLE sequence so far, not just the new word —
-          // "WHERE" alone can't become "Where is the hospital?", but
-          // "WHERE HOSPITAL" together can.
-          try {
-            const options = await llm.composeSentenceOptions(updated);
-            if (composeRequestId.current !== requestId) return;
-            const merged = withRememberedSentence(remembered, options);
-            setDraftOptions(merged);
-            setDraft(merged[0] ?? updated.join(' '));
-          } catch {
-            // LLM call failed — fall back to the remembered pick (if any)
-            // or the raw gloss sequence, rather than leaving the draft
-            // stuck on a stale sentence.
-            if (composeRequestId.current !== requestId) return;
-            const merged = withRememberedSentence(remembered, []);
-            setDraftOptions(merged);
-            setDraft(merged[0] ?? updated.join(' '));
-          }
-        } else {
-          // Model not ready (still loading, missing, or errored) — never
-          // block signing on it. Show the remembered pick if there is one,
-          // else the raw glosses; the LLM upgrades this once ready.
-          const merged = withRememberedSentence(remembered, []);
-          setDraftOptions(merged);
-          setDraft(merged[0] ?? updated.join(' '));
-        }
-      })();
-
+      composeForSequence(updated);
       return updated;
     });
-  }, [zonedMatch, llm]);
+  }, [zonedMatch, composeForSequence]);
+
+  // Signing doesn't wait for the LLM (composeForSequence above always shows
+  // SOMETHING immediately), so a sequence recognized while the model was
+  // still loading only ever shows its remembered pick, if any — with no
+  // later nudge, the LLM's 2 readings would just never appear for that
+  // sequence. Once the model finishes loading, recompute for whatever is
+  // still the current sequence so those readings can join it.
+  useEffect(() => {
+    if (llm.status === 'ready' && recognized.length > 0) {
+      composeForSequence(recognized);
+    }
+    // Deliberately keyed on llm.status alone: recomposing on every new sign
+    // is handleGuideComplete's job, this effect exists only to backfill a
+    // sequence that was already recognized before the model became ready.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [llm.status]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
