@@ -14,6 +14,9 @@ import {
 } from '../components';
 import { CONNECT_INTRO_MESSAGE, SEED_CONTACTS } from '../data/mock';
 import {
+  appendTurn,
+  buildRecentContext,
+  type ConversationTurn,
   getRememberedSentences,
   isSameSentence,
   MAX_CANDIDATES_PER_SEQUENCE,
@@ -94,10 +97,21 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // after a few seconds so a stale reply doesn't linger once the conversation has moved on.
   const [caption, setCaption] = useState<string | null>(null);
   const captionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // The call's turn history — every sentence sent and every reply received, for as long as this
+  // screen stays mounted. Fed to the LLM below (as a recency window, via buildRecentContext) so
+  // it can judge an ambiguous sign sequence using what was already said instead of guessing cold
+  // every time. Kept in a ref alongside the state so composeForSequence always reads the latest
+  // turns without needing to be recreated (and re-triggering its callers) on every new one.
+  const [turns, setTurns] = useState<ConversationTurn[]>([]);
+  const turnsRef = useRef<ConversationTurn[]>(turns);
+  turnsRef.current = turns;
+
   const handleRelayMessage = useCallback((text: string) => {
     setCaption(text);
     if (captionTimeoutRef.current) clearTimeout(captionTimeoutRef.current);
     captionTimeoutRef.current = setTimeout(() => setCaption(null), 6000);
+    setTurns((prev) => appendTurn(prev, 'callee', text));
   }, []);
   useEffect(() => () => {
     if (captionTimeoutRef.current) clearTimeout(captionTimeoutRef.current);
@@ -201,7 +215,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
           // "WHERE" alone can't become "Where is the hospital?", but
           // "WHERE HOSPITAL" together can.
           try {
-            options = await llm.composeSentenceOptions(sequence);
+            options = await llm.composeSentenceOptions(sequence, buildRecentContext(turnsRef.current));
           } catch {
             // LLM call failed — fall back to the remembered picks (if any)
             // or the raw gloss sequence, rather than leaving the draft
@@ -492,6 +506,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                         accessibilityLabel={`Send: ${option}`}
                         onPress={() => {
                           speak(option);
+                          setTurns((prev) => appendTurn(prev, 'caller', option));
                           rememberSentenceChoice(recognized, option).catch(() => undefined);
                           resetRecognition();
                         }}

@@ -75,8 +75,13 @@ export const GLOSS_TO_TEXT_FEWSHOT: Array<{ gloss: string; text: string }> = [
   { gloss: 'I GO HOME', text: "I'm going home." },
 ];
 
-export function buildGlossUserPrompt(gloss: string[]): string {
-  return `Glosses: ${gloss.join(' ')}`;
+/** @param context Recent turns of this call (see `buildRecentContext` in features.ts) — who's
+ *  signing is often only clear from what was already said, e.g. once the driver has said "I've
+ *  parked", a later "WHERE" is far more likely the customer asking than the driver asking
+ *  themselves. Omit for a cold-start sequence with no call history yet. */
+export function buildGlossUserPrompt(gloss: string[], context?: string): string {
+  if (!context) return `Glosses: ${gloss.join(' ')}`;
+  return `Conversation so far:\n${context}\n\nGlosses: ${gloss.join(' ')}`;
 }
 
 /**
@@ -113,6 +118,11 @@ export const GLOSS_TO_TEXT_OPTIONS_SYSTEM = [
   'package" is the one speaking or arriving, as if narrating from outside',
   'the call (not "The delivery has reached home" — say "I have reached" or',
   '"Have you reached?" instead, depending on which person is meant).',
+  'If a "Conversation so far" section is given, use it to judge which person',
+  'is more likely signing now — e.g. once one side has already said something',
+  'that only makes sense from the driver, a later ambiguous gloss sequence is',
+  'more likely the OTHER person. Still offer a genuinely different reading',
+  'for the other role too when the history does not rule it out completely.',
   'Rules for EVERY sentence:',
   '- Exactly one sentence each, at most one final period or question mark.',
   '- Only use "I"/"my"/"me" in a sentence if that sentence assumes the',
