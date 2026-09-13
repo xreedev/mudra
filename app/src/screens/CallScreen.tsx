@@ -80,7 +80,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // Real hand-landmark detection (HandLandmarksFrameProcessorPlugin.kt,
   // wrapping MediaPipe's HandLandmarker) matched against the bundled
   // gesture templates every frame.
-  const { frameProcessor, match, landmarks, templates } = useLiveHandGestures();
+  const { frameProcessor, match, landmarks } = useLiveHandGestures();
   const lastAppendedLabel = useRef<string | null>(null);
   const cameraStageRef = useRef<CameraStageHandle>(null);
 
@@ -353,47 +353,14 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             />
           </View>
 
-          <View
-            style={[
-              styles.pillRow,
-              { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
-            ]}
-          >
-            <View style={[styles.pill, { paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs }]}>
-              <Text variant="caption" style={styles.onDark}>
-                Signing · {templates.length} templates on device
-              </Text>
-            </View>
-            {relay.available ? (
-              <View
-                style={[
-                  styles.pill,
-                  {
-                    marginLeft: theme.spacing.sm,
-                    paddingHorizontal: theme.spacing.sm,
-                    paddingVertical: theme.spacing.xs,
-                  },
-                ]}
-              >
-                <Text variant="caption" style={styles.onDark}>
-                  {relay.status === 'connected' && `Relay · sending to ${relay.peerName}`}
-                  {relay.status === 'scanning' && 'Relay · looking for a receiver phone'}
-                  {relay.status === 'connecting' && 'Relay · connecting…'}
-                  {relay.status === 'disconnected' && 'Relay · not connected'}
-                </Text>
-              </View>
-            ) : null}
-            {llm.status !== 'ready' ? (
-              <View
-                style={[
-                  styles.pill,
-                  {
-                    marginLeft: theme.spacing.sm,
-                    paddingHorizontal: theme.spacing.sm,
-                    paddingVertical: theme.spacing.xs,
-                  },
-                ]}
-              >
+          {llm.status !== 'ready' ? (
+            <View
+              style={[
+                styles.pillRow,
+                { paddingHorizontal: theme.spacing.lg, marginTop: theme.spacing.sm },
+              ]}
+            >
+              <View style={[styles.pill, { paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.xs }]}>
                 <Text variant="caption" style={styles.onDark}>
                   {llm.status === 'loading' && 'Loading on-device LLM…'}
                   {llm.status === 'checking' && 'Checking for on-device model…'}
@@ -401,8 +368,8 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   {llm.status === 'error' && 'LLM failed to load — showing raw signs'}
                 </Text>
               </View>
-            ) : null}
-          </View>
+            </View>
+          ) : null}
 
           <View style={styles.spacer} />
 
