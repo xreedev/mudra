@@ -25,9 +25,11 @@ interface TranscriptEntry {
  *
  * The mic works the way a real phone call's does: it's just always listening for as long as
  * you're on this screen, not something you press to talk into — the same reason Call's camera is
- * always live rather than needing a "start signing" button. Mute silences BOTH directions at
- * once, same as stepping away from a real call: your mic stops listening and incoming messages
- * stop being spoken aloud (still logged either way, so nothing's lost).
+ * always live rather than needing a "start signing" button. It also pauses itself for as long as
+ * this phone's own speaker is playing a reply out loud, so it never re-hears (and relays back)
+ * the message it's in the middle of speaking. Mute silences both directions at once, same as
+ * stepping away from a real call: your mic stops listening and incoming messages stop being
+ * spoken aloud (still logged either way, so nothing's lost).
  *
  * Styled as a call screen rather than a plain message list: for the hearing person holding this
  * phone, this IS the call — there's just no live audio stream, only text passing each way. Same
@@ -58,10 +60,17 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
 
   const relay = useAslRelayReceiver(handleMessage);
 
-  // Starts listening the moment the call isn't muted, and keeps listening for as long as it
-  // isn't — no press-to-talk, same as the mic on a real call. Re-runs whenever `muted` flips.
+  // The mic also pauses while this phone's own speaker is playing a reply out loud. Without
+  // this, the phone would pick its own voice back up (over the earpiece/speaker into the same
+  // mic) and relay it straight back to the signer as if the receiver had just said it — the
+  // signer's own message, echoed back to them as a "reply" on a loop.
+  const listening = !muted && speakingState !== 'speaking';
+
+  // Starts listening the moment the call isn't muted or speaking, and keeps listening for as
+  // long as neither is true — no press-to-talk, same as the mic on a real call. Re-runs whenever
+  // `listening` flips.
   useEffect(() => {
-    if (muted) {
+    if (!listening) {
       whisper.stop().catch(() => undefined);
       return;
     }
@@ -90,9 +99,9 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
       cancelled = true;
     };
     // relay.sendText is stable for the component's lifetime (see useAslRelayReceiver); only
-    // `muted` should actually restart the mic.
+    // `listening` should actually restart the mic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [muted, whisper]);
+  }, [listening, whisper]);
 
   useEffect(() => {
     return () => {
@@ -204,7 +213,13 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
             >
               <Icon name={muted ? 'mic-off' : 'mic'} size={12} color="#FFFFFF" />
               <Text variant="caption" style={styles.onDark}>
-                {muted ? 'Mic muted' : micActive ? 'Mic listening' : 'Starting mic…'}
+                {muted
+                  ? 'Mic muted'
+                  : speakingState === 'speaking'
+                    ? 'Paused while speaking'
+                    : micActive
+                      ? 'Mic listening'
+                      : 'Starting mic…'}
               </Text>
             </View>
           </View>
