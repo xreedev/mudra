@@ -18,10 +18,11 @@ export const SEED_SIGNS: CustomSign[] = [
   { id: '3', label: 'AMBULANCE', samples: 30 },
 ];
 
-/** Sent once, automatically, the moment a receiver phone connects — so whoever picks up knows
- *  right away that what follows is sign-converted speech rather than a real voice. Never shown
- *  as the on-screen draft; it only ever goes out over the relay. */
-export const CONNECT_INTRO_MESSAGE = 'This is sign-converted language. I am differently abled.';
+/** Sent once, automatically, the moment a call connects to an actual contact (not "Just
+ *  practice") — so whoever picks up knows right away that what follows is sign-converted speech
+ *  rather than a real voice. Never shown as the on-screen draft; it only ever goes out over the
+ *  relay. */
+export const CONNECT_INTRO_MESSAGE = 'This is a sign-language call — my phone speaks for me.';
 
 export interface Contact {
   id: string;
@@ -31,7 +32,7 @@ export interface Contact {
 }
 
 export const SEED_CONTACTS: Contact[] = [
-  { id: '1', name: 'Delivery 1', detail: 'Apollo Pharmacy' },
-  { id: '2', name: 'Delivery 2', detail: 'Dr. Meera Raghavan' },
+  { id: '1', name: 'Delivery 1', detail: 'Saved contact' },
+  { id: '2', name: 'Delivery 2', detail: 'Saved contact' },
   { id: '3', name: 'Emergency services', detail: '108', emergency: true },
 ];

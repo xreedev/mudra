@@ -112,13 +112,14 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const speaker = useRef(new LocalSpeaker()).current;
   useEffect(() => () => speaker.stop(), [speaker]);
 
-  // The moment a receiver phone connects, it's told once that what follows is sign-converted
-  // speech rather than a real voice — never shown as the on-screen draft, it only goes out over
-  // the relay. Re-fires on a reconnect (not just once per screen visit) so a dropped-and-resumed
-  // connection still gets the announcement.
+  // The moment a call to an actual contact connects, it's told once that what follows is
+  // sign-converted speech rather than a real voice — never shown as the on-screen draft, it only
+  // goes out over the relay. Skipped in "Just practice" mode (no `contact`), since there's no one
+  // on the other end to tell. Re-fires on a reconnect (not just once per screen visit) so a
+  // dropped-and-resumed call still gets the announcement.
   const introSentRef = useRef(false);
   useEffect(() => {
-    if (relay.status !== 'connected') {
+    if (relay.status !== 'connected' || !contact) {
       introSentRef.current = false;
       return;
     }
@@ -126,7 +127,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     introSentRef.current = true;
     relay.sendText(CONNECT_INTRO_MESSAGE);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [relay.status]);
+  }, [relay.status, contact]);
 
   // A connected receiver already speaks whatever it's sent (see ReceiveScreen) — playing it out
   // loud here too would just echo the same sentence twice. Local TTS only kicks in when there's
