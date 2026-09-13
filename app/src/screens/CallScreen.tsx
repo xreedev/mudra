@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Button,
   CameraStage,
   type CameraStageHandle,
   GlossBubbles,
@@ -13,7 +12,7 @@ import {
   SignGuideCircle,
   Text,
 } from '../components';
-import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
+import { CONNECT_INTRO_MESSAGE, SEED_CONTACTS } from '../data/mock';
 import {
   getRememberedSentences,
   isSameSentence,
@@ -24,7 +23,6 @@ import {
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useAslRelaySender } from '../relay/useAslRelaySender';
-import { LocalSpeaker, type SpeakingState } from '../speech/LocalSpeaker';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -34,12 +32,15 @@ import type { ScreenProps } from '../navigation/types';
  * The app's one signing-into-speech screen. Three states: pick who to call (or "Just practice"
  * for no one — what used to be the separate "Talk Aloud" screen), then the live view. Live
  * layout is a full-bleed camera behind everything — signing is the input method, so the preview
- * gets the whole screen — with the call bar, recognized glosses, draft sentence, and call
+ * gets the whole screen — with the call bar, recognized glosses, candidate readings, and call
  * controls floating on top of it as translucent overlays, the way a normal video call's chrome
  * floats over the video rather than displacing it.
  *
- * The draft is never spoken until "Confirm & speak" is pressed. That gate is the whole safety
- * model of the product, so it is a full-width primary button and nothing sits near it.
+ * Signing composes one or more candidate readings of the sequence so far; tapping one is the
+ * whole action — it's relayed immediately and the sequence resets for the next sentence. There's
+ * no separate confirm step, so reading before tapping is what stands in for it. Nothing is ever
+ * played out loud on this phone — the signer can't hear it either way — only the receiver's
+ * phone speaks what comes through.
  */
 
 /** Diameter of the white placement guide — kept in sync with the rectangle below. */
@@ -56,19 +57,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [contact, setContact] = useState<string | null>(null);
   // Signing with no one to relay to but yourself — what used to be the separate "Talk Aloud"
   // screen — is reachable here too, via "Just practice" on the contact picker below, rather
-  // than requiring a real contact just to sign and hear something spoken back.
+  // than requiring a real contact just to see a sentence resolve.
   const [practiceMode, setPracticeMode] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
-  const [draft, setDraft] = useState(DEMO_DRAFT);
-  // Candidate readings for the current draft: every sentence remembered for
-  // this exact sign sequence leads (most-recently-picked first — the same
-  // signs can genuinely mean different things on different occasions, so
-  // picking a new one adds to memory rather than replacing it), then LLM
-  // readings fill whatever slots are left, up to MAX_CANDIDATES_PER_SEQUENCE
-  // total. `draft` is always one of these (or the raw gloss fallback when
-  // nothing is remembered and the LLM isn't ready); tapping an option in the
-  // UI below just changes which one `draft` points at.
+  // Candidate readings for the current sign sequence: every sentence
+  // remembered for this exact sequence leads (most-recently-picked first —
+  // the same signs can genuinely mean different things on different
+  // occasions, so picking a new one adds to memory rather than replacing
+  // it), then LLM readings fill whatever slots are left, up to
+  // MAX_CANDIDATES_PER_SEQUENCE total. Tapping one below speaks/relays it
+  // immediately — there's no intermediate "selected" state.
   const [draftOptions, setDraftOptions] = useState<string[]>([]);
   // The sentences remembered for the current sign sequence, if any — kept
   // separately (rather than re-derived from draftOptions) purely so the UI
@@ -106,27 +104,52 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   }, []);
 
   // Same-WiFi relay to a second phone (see asl-relay-rn): scans for a receiver advertised on
-  // the local network and auto-connects. "Confirm & speak" below speaks locally AND relays the
-  // sentence to that phone, so a hearing person can hold the receiving phone instead of needing
-  // to be within earshot.
+  // the local network and auto-connects. Tapping a reading below relays it to that phone, so a
+  // hearing person can hold the receiving phone instead of needing to be within earshot.
   const relay = useAslRelaySender(handleRelayMessage);
-  const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
-  // Which exact sentence is currently playing — lets each candidate in "WHO'S SPEAKING? PICK
-  // ONE" below show its own stop icon rather than only the main draft knowing it's speaking.
-  const [spoken, setSpoken] = useState<string | null>(null);
-  const speaker = useRef(new LocalSpeaker()).current;
-  useEffect(() => () => speaker.stop(), [speaker]);
 
+  // The moment a call to an actual contact connects, it's told once that what follows is
+  // sign-converted speech rather than a real voice — never shown as the on-screen draft, it only
+  // goes out over the relay. Skipped in "Just practice" mode (no `contact`), since there's no one
+  // on the other end to tell. Re-fires on a reconnect (not just once per screen visit) so a
+  // dropped-and-resumed call still gets the announcement.
+  const introSentRef = useRef(false);
+  useEffect(() => {
+    if (relay.status !== 'connected' || !contact) {
+      introSentRef.current = false;
+      return;
+    }
+    if (introSentRef.current) return;
+    introSentRef.current = true;
+    relay.sendText(CONNECT_INTRO_MESSAGE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relay.status, contact]);
+
+  // A real "connected" clock, counting only while a receiver is actually connected — replaces a
+  // fixed "Connected · 00:42" that used to show the instant a contact was picked, whether or not
+  // the relay had found anyone yet. That was the confusing part: it read as connected even while
+  // still scanning, or after the receiver dropped.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (relay.status !== 'connected') {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [relay.status]);
+
+  // The signer can't hear their own phone either way, so it never plays anything out loud —
+  // relaying is the only output. Sending is a no-op until a receiver is actually connected (see
+  // useAslRelaySender), which is exactly right for "Just practice": nothing goes anywhere, the
+  // point there is just to see a sentence resolve, not to hear it.
   const speak = useCallback(
     (text: string) => {
       if (!text.trim()) return;
-      speaker.speak(text, (state) => {
-        setSpeakingState(state);
-        setSpoken(state === 'idle' ? null : text);
-      });
       relay.sendText(text);
     },
-    [speaker, relay],
+    [relay],
   );
 
   // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
@@ -138,46 +161,19 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // reacting to instantaneous per-frame matches.
   const llm = useLocalLlm();
   const composeRequestId = useRef(0);
-  // Tracks the draft value WE last set programmatically (as opposed to one
-  // the user picked) — lets a later backfill (see the llm.status effect
-  // below) upgrade `draftOptions` without ever clobbering a choice the user
-  // already made.
-  const autoDraftRef = useRef<string>(DEMO_DRAFT);
 
-  // Once a sentence is confirmed & spoken, the recognized-signs panel closes
-  // and the draft resets — the confirmation is the end of that "turn", so
-  // the next sign starts a fresh sequence rather than appending onto the
-  // one that was just spoken. Also invalidates any in-flight compose so a
-  // late-arriving result can't repopulate the panel right after it closes.
+  // Once a reading is spoken, the recognized-signs panel closes and the
+  // options clear — speaking IS the end of that "turn", so the next sign
+  // starts a fresh sequence rather than appending onto the one just spoken.
+  // Also invalidates any in-flight compose so a late-arriving result can't
+  // repopulate the panel right after it closes.
   const resetRecognition = useCallback(() => {
     composeRequestId.current += 1;
     lastAppendedLabel.current = null;
-    autoDraftRef.current = DEMO_DRAFT;
     setRecognized([]);
     setDraftOptions([]);
     setRememberedSentences([]);
-    setDraft(DEMO_DRAFT);
   }, []);
-
-  // "Confirm & speak" is the confirmation gate (see the screen doc comment) — so that tap is
-  // also the moment the pick is remembered for this exact sign sequence, the moment it's relayed
-  // to a connected receiver phone, and the moment the recognized-signs panel closes for the next
-  // one. speakOption below (the per-candidate preview icon) does the same three things directly
-  // for one specific candidate, bypassing the need to select it as the draft first.
-  const confirmAndSpeak = useCallback(() => {
-    speak(draft);
-    rememberSentenceChoice(recognized, draft).catch(() => undefined);
-    resetRecognition();
-  }, [speak, recognized, draft, resetRecognition]);
-
-  const speakOption = useCallback(
-    (option: string) => {
-      speak(option);
-      rememberSentenceChoice(recognized, option).catch(() => undefined);
-      resetRecognition();
-    },
-    [speak, recognized, resetRecognition],
-  );
 
   // The one place a sign sequence's remembered sentences + LLM options are
   // looked up and merged — called both when a new sign completes (below)
@@ -221,12 +217,9 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
         // already full, in which case there's nothing to upgrade).
 
         const merged = withRememberedSentences(remembered, options);
-        const nextDraft = merged[0] ?? sequence.join(' ');
-        setDraftOptions(merged);
-        // Only move the draft if it's still pointing at whatever WE set it
-        // to last time — never overwrite a sentence the user has picked.
-        setDraft((prev) => (prev === autoDraftRef.current ? nextDraft : prev));
-        autoDraftRef.current = nextDraft;
+        // Falls back to the raw gloss sequence as the one reading when
+        // there's nothing remembered and the LLM has nothing either.
+        setDraftOptions(merged.length > 0 ? merged : [sequence.join(' ')]);
       })();
     },
     [llm],
@@ -279,6 +272,9 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   }, [llm.status]);
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
+  // What actually renders as speakable rows: the composed candidates, or — before any of those
+  // exist yet (nothing signed this turn) — nothing at all.
+  const readingOptions = draftOptions;
 
   if (!active && !practiceMode) {
     return (
@@ -286,20 +282,43 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
         onSelect={(id) => {
           setRecognized([]);
           lastAppendedLabel.current = null;
-          setDraft(DEMO_DRAFT);
           setDraftOptions([]);
           setContact(id);
         }}
         onSkip={() => {
           setRecognized([]);
           lastAppendedLabel.current = null;
-          setDraft(DEMO_DRAFT);
           setDraftOptions([]);
           setPracticeMode(true);
         }}
       />
     );
   }
+
+  // Call bar subtitle + badge: reflects the real relay connection, not just whether a contact
+  // was picked, so "LIVE" only ever shows once a receiver phone has actually answered.
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const seconds = String(elapsed % 60).padStart(2, '0');
+  const callStatusLabel = !active
+    ? 'Sign, then it’s sent'
+    : relay.status === 'connected'
+      ? `Connected · ${minutes}:${seconds}`
+      : relay.status === 'connecting'
+        ? `Connecting to ${active.name}…`
+        : relay.status === 'disconnected'
+          ? 'Lost connection — looking again…'
+          : relay.status === 'unavailable'
+            ? 'Relay unavailable on this device'
+            : `Looking for ${active.name}’s phone…`;
+  const callBadgeLabel = !active
+    ? 'ON DEVICE'
+    : relay.status === 'connected'
+      ? 'LIVE'
+      : relay.status === 'connecting'
+        ? 'CONNECTING'
+        : relay.status === 'unavailable'
+          ? 'OFFLINE'
+          : 'SEARCHING';
 
   return (
     <Screen dark edgeToEdge>
@@ -347,17 +366,14 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               accessibilityLabel="End and go back"
               variant="translucent"
               size={38}
-              onPress={() => {
-                speaker.stop();
-                navigation.goBack();
-              }}
+              onPress={navigation.goBack}
             />
             <View style={styles.callBarTitle}>
               <Text variant="bodyStrong" style={styles.onDark}>
                 {active?.name ?? 'Practice'}
               </Text>
               <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                {active ? 'Connected · 00:42' : 'Sign, then confirm to hear it'}
+                {callStatusLabel}
               </Text>
             </View>
             <View
@@ -370,9 +386,11 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 },
               ]}
             >
-              {active ? <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} /> : null}
+              {relay.status === 'connected' ? (
+                <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
+              ) : null}
               <Text variant="caption" style={styles.onDark}>
-                {active ? 'LIVE' : 'ON DEVICE'}
+                {callBadgeLabel}
               </Text>
             </View>
             <IconButton
@@ -454,76 +472,42 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               ]}
             >
               <Text variant="label" style={[styles.onDark, styles.dim]}>
-                WILL BE SPOKEN
+                {readingOptions.length > 1 ? "WHO'S SPEAKING? PICK ONE" : 'WILL BE SPOKEN'}
               </Text>
-              <Text variant="heading" style={[styles.onDark, { marginTop: theme.spacing.sm }]}>
-                {draft}
-              </Text>
-              {rememberedSentences.some((r) => isSameSentence(draft, r)) && draftOptions.length <= 1 ? (
-                <View
-                  style={[
-                    styles.memoryTagRow,
-                    { gap: theme.spacing.xs / 2, marginTop: theme.spacing.xs },
-                  ]}
-                >
-                  <Icon name="memory" size={11} color="rgba(255,255,255,0.7)" />
-                  <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                    From memory
-                  </Text>
-                </View>
-              ) : null}
 
-              {draftOptions.length > 1 ? (
-                // The glosses alone can't say whether the signer is the
-                // customer or the driver ("ARRIVED HOME RIGHT LEFT" means
-                // opposite things either way) — rather than the LLM
-                // silently guessing, it offers a few genuinely different
-                // readings and the person picks the one matching their
-                // actual situation. Same confirmation-gate idea as the rest
-                // of the app: the LLM proposes, the human confirms.
-                <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.md }}>
-                  <Text variant="label" style={[styles.onDark, styles.dim]}>
-                    WHO'S SPEAKING? PICK ONE
-                  </Text>
-                  {draftOptions.map((option, index) => {
-                    const selected = option === draft;
+              {readingOptions.length > 0 ? (
+                // Tapping a reading is the whole action — it's relayed immediately, so there's
+                // nothing further to confirm. When there's more than one, the glosses
+                // alone can't say whether the signer is the customer or the driver ("ARRIVED
+                // HOME RIGHT LEFT" means opposite things either way) — rather than the LLM
+                // silently guessing, it offers a few genuinely different readings and the person
+                // taps the one matching their actual situation.
+                <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}>
+                  {readingOptions.map((option, index) => {
                     const fromMemory = rememberedSentences.some((r) => isSameSentence(option, r));
-                    // Speaking a specific candidate directly, distinct from the row tap below
-                    // (which only selects), so previewing one never bypasses "Confirm & speak"
-                    // for the one you actually meant to send.
-                    const speakingThis = speakingState === 'speaking' && spoken === option;
                     return (
                       <Pressable
                         key={`${option}-${index}`}
                         accessibilityRole="button"
-                        accessibilityState={{ selected }}
+                        accessibilityLabel={`Send: ${option}`}
                         onPress={() => {
-                          setDraft(option);
+                          speak(option);
                           rememberSentenceChoice(recognized, option).catch(() => undefined);
+                          resetRecognition();
                         }}
                         style={[
                           styles.optionRow,
                           {
                             borderRadius: theme.radius.md,
-                            borderColor: selected ? theme.colors.accent : 'rgba(255,255,255,0.25)',
-                            backgroundColor: selected ? theme.colors.accentSoft : 'transparent',
+                            borderColor: 'rgba(255,255,255,0.25)',
                             gap: theme.spacing.sm,
                             paddingHorizontal: theme.spacing.md,
                             paddingVertical: theme.spacing.sm,
                           },
                         ]}
                       >
-                        {selected ? (
-                          <Icon name="check" size={16} color={theme.colors.accent} />
-                        ) : (
-                          <View style={styles.optionCheckSpacer} />
-                        )}
                         <View style={styles.optionTextCol}>
-                          <Text
-                            variant="body"
-                            style={selected ? undefined : styles.onDark}
-                            tone={selected ? 'accent' : undefined}
-                          >
+                          <Text variant="body" style={styles.onDark}>
                             {option}
                           </Text>
                           {fromMemory ? (
@@ -540,91 +524,42 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                             </View>
                           ) : null}
                         </View>
-                        <IconButton
-                          name={speakingThis ? 'stop' : 'volume'}
-                          accessibilityLabel={speakingThis ? 'Stop' : `Speak: ${option}`}
-                          variant={speakingThis ? 'accent' : 'translucent'}
-                          size={36}
-                          onPress={() => (speakingThis ? speaker.stop() : speakOption(option))}
-                        />
+                        <Icon name="chevron-right" size={18} color="rgba(255,255,255,0.5)" />
                       </Pressable>
                     );
                   })}
                 </View>
-              ) : null}
-
-              <View
-                style={[
-                  styles.draftActions,
-                  { marginTop: theme.spacing.md, gap: theme.spacing.sm },
-                ]}
-              >
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Reset draft"
-                  onPress={() => {
-                    setDraft(DEMO_DRAFT);
-                    setDraftOptions([]);
-                  }}
-                  hitSlop={6}
-                  style={styles.textAction}
+              ) : (
+                <Text
+                  variant="heading"
+                  style={[styles.onDark, styles.dim, { marginTop: theme.spacing.sm }]}
                 >
-                  <Text variant="caption" tone="accent">
-                    Reset
-                  </Text>
-                </Pressable>
-                <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                  ·
+                  Sign to begin
                 </Text>
+              )}
+
+              {readingOptions.length > 0 ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Clear draft"
-                  onPress={() => {
-                    setDraft('');
-                    setDraftOptions([]);
-                  }}
+                  accessibilityLabel="Clear"
+                  onPress={resetRecognition}
                   hitSlop={6}
-                  style={styles.textAction}
+                  style={[styles.textAction, { marginTop: theme.spacing.md }]}
                 >
                   <Text variant="caption" tone="accent">
                     Clear
                   </Text>
                 </Pressable>
-              </View>
+              ) : null}
             </View>
 
-            <Button
-              label={speakingState === 'speaking' ? 'Stop' : 'Confirm & speak'}
-              icon={speakingState === 'speaking' ? 'stop' : 'check'}
-              size="lg"
-              block
-              disabled={draft.trim().length === 0}
-              onPress={() => (speakingState === 'speaking' ? speaker.stop() : confirmAndSpeak())}
-            />
-            {speakingState === 'unavailable' ? (
-              <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                Voice output needs a development build with react-native-tts linked.
-              </Text>
-            ) : null}
-
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
-              <IconButton
-                name={muted ? 'mic-off' : 'mic'}
-                accessibilityLabel={muted ? 'Unmute' : 'Mute'}
-                selected={muted}
-                variant={muted ? 'accent' : 'translucent'}
-                size={52}
-                onPress={() => setMuted(!muted)}
-              />
               <IconButton
                 name="close"
                 accessibilityLabel="End call"
                 variant="danger"
                 size={64}
-                onPress={() => {
-                  speaker.stop();
-                  navigation.goBack();
-                }}
+                onPress={navigation.goBack}
               />
               <IconButton
                 name="chat"
@@ -643,7 +578,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
 
 /** Who to call. An emergency contact is visually separated so it cannot be hit by accident.
  *  "Just practice" is the no-call-partner path — what used to be its own "Talk Aloud" screen —
- *  for signing and hearing something spoken back with no one on the other end. */
+ *  for signing and seeing a sentence resolve with no one on the other end to send it to. */
 function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; onSkip: () => void }) {
   const theme = useTheme();
 
@@ -652,7 +587,7 @@ function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; o
       <View style={{ paddingTop: theme.spacing.lg }}>
         <Text variant="title">Call</Text>
         <Text variant="body" tone="muted" style={{ marginTop: theme.spacing.xs }}>
-          Pick who to reach. You will confirm every sentence before it is spoken.
+          Pick who to reach. Sign a sentence, then tap it to send.
         </Text>
       </View>
 
@@ -719,7 +654,7 @@ function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; o
           <View style={[styles.contactText, { gap: theme.spacing.xs / 2 }]}>
             <Text variant="bodyStrong">Just practice</Text>
             <Text variant="caption" tone="muted">
-              Sign a sentence, hear it spoken — no call partner needed
+              Sign a sentence and see it resolve — no call partner needed
             </Text>
           </View>
           <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
@@ -819,10 +754,8 @@ const styles = StyleSheet.create({
   /** A slightly darker panel just for the draft text, so the sentence that's
    *  about to be spoken reads as the clear focal point of the chrome. */
   draftPanel: { backgroundColor: 'rgba(0,0,0,0.35)' },
-  draftActions: { flexDirection: 'row', alignItems: 'center' },
   textAction: { minHeight: HIT_SLOP_SIZE, justifyContent: 'center' },
   optionRow: { flexDirection: 'row', alignItems: 'center', borderWidth: StyleSheet.hairlineWidth * 2 },
-  optionCheckSpacer: { width: 16 },
   optionTextCol: { flex: 1 },
   memoryTagRow: { flexDirection: 'row', alignItems: 'center' },
   controls: {

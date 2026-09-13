@@ -67,8 +67,33 @@ export type LocalWhisperCallbacks = {
 export class LocalWhisperTranscriber {
   private context?: WhisperContext;
   private transcriber?: RealtimeTranscriberInstance;
+  // Serializes start()/stop() against each other. initWhisper() + transcriber.start() take real
+  // time (loading the model, spinning up the native audio stream) — without this, a stop() that
+  // lands while a start() is still in that window would clear `context`/`transcriber` first,
+  // and the start() call would then go on to finish and overwrite them with a fresh instance
+  // nobody ever stops: the UI reports "listening" (whatever the last call set) but the actual
+  // native mic stream from the orphaned start() is left running untracked, so nothing captured
+  // afterwards ever reaches a live `transcriber` to be transcribed. Routing every call through
+  // this chain makes start()s and stop()s run one at a time, in the order they were requested.
+  private queue: Promise<void> = Promise.resolve();
 
-  async start(callbacks: LocalWhisperCallbacks, language = 'en'): Promise<void> {
+  start(callbacks: LocalWhisperCallbacks, language = 'en'): Promise<void> {
+    this.queue = this.queue.then(
+      () => this.doStart(callbacks, language),
+      () => this.doStart(callbacks, language),
+    );
+    return this.queue;
+  }
+
+  stop(): Promise<void> {
+    this.queue = this.queue.then(
+      () => this.doStop(),
+      () => this.doStop(),
+    );
+    return this.queue;
+  }
+
+  private async doStart(callbacks: LocalWhisperCallbacks, language: string): Promise<void> {
     if (this.transcriber) {
       return;
     }
@@ -99,7 +124,7 @@ export class LocalWhisperTranscriber {
     await this.transcriber.start();
   }
 
-  async stop(): Promise<void> {
+  private async doStop(): Promise<void> {
     const transcriber = this.transcriber;
     const context = this.context;
     this.transcriber = undefined;
