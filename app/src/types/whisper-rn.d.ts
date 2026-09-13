@@ -5,6 +5,10 @@
 declare module 'whisper.rn' {
   export type WhisperContext = {
     transcribeData: (data: ArrayBuffer, options: { language?: string }) => unknown;
+    transcribe: (
+      filePathOrBase64: string | number,
+      options?: { language?: string },
+    ) => { stop: () => Promise<void>; promise: Promise<{ result: string }> };
     release: () => Promise<void>;
   };
 

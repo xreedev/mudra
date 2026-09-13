@@ -60,6 +60,9 @@ export interface ThemeColors {
   accent: string;
   accentText: string;
   accentSoft: string;
+  /** A translucent chip background for something sitting ON TOP of a solid accent fill (e.g. the
+   *  hero card's "ON DEVICE" badge) — `accentSoft` itself is too close to `accent` to read there. */
+  onAccentSoft: string;
   danger: string;
   dangerSoft: string;
   warning: string;
@@ -80,6 +83,7 @@ export const lightColors: ThemeColors = {
   accent: palette.teal600,
   accentText: palette.white,
   accentSoft: palette.teal50,
+  onAccentSoft: 'rgba(255, 255, 255, 0.20)',
   danger: palette.red600,
   dangerSoft: palette.red50,
   warning: palette.amber500,
@@ -99,6 +103,7 @@ export const darkColors: ThemeColors = {
   accent: palette.teal500,
   accentText: palette.teal900,
   accentSoft: 'rgba(20, 184, 166, 0.14)',
+  onAccentSoft: 'rgba(5, 47, 42, 0.18)',
   danger: palette.red400,
   dangerSoft: 'rgba(248, 113, 113, 0.14)',
   warning: palette.amber500,
