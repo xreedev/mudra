@@ -85,11 +85,13 @@ android {
         versionCode 1
         versionName "1.0"
     }
-    // MediaPipe's .task model file must not be re-compressed into the APK —
-    // it's read via mmap/AssetFileDescriptor, which requires it stay a
-    // contiguous, uncompressed entry in the zip.
+    // MediaPipe's .task model file, and the bundled LLM .gguf, must not be
+    // re-compressed into the APK: .task is read via mmap/AssetFileDescriptor,
+    // and llama.cpp mmaps the .gguf directly once extracted — both need to
+    // stay a contiguous, uncompressed entry in the zip. Recompressing a
+    // already-dense GGUF also just wastes build time for no size benefit.
     androidResources {
-        noCompress += ["task"]
+        noCompress += ["task", "gguf"]
     }
     signingConfigs {
         debug {

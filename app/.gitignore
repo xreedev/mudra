@@ -72,3 +72,9 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# On-device LLM model (multi-GB GGUF) — bundled into release builds by
+# scripts/build-release-with-llm.ps1, never committed. Debug builds expect it
+# pushed separately via adb (see src/llm/useLocalLlm.ts).
+*.gguf
+android/app/src/main/assets/models/

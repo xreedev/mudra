@@ -41,6 +41,10 @@ export const GLOSS_TO_TEXT_SYSTEM = [
   '  name or number that was not signed.',
   '- Never invent street names, distances, numbers, or landmarks that are',
   '  not in the glosses — only turn what was actually signed into words.',
+  '- Never introduce an action, place, or topic that is not one of the',
+  '  glosses given (e.g. do not mention parking unless PARK is one of the',
+  '  glosses) — stick to ONLY the glosses shown, even if a different topic',
+  '  appeared in an earlier example.',
   '- If the glosses do not clearly form one connected idea, do not invent a',
   '  spatial, causal, or logical relationship between them to make the',
   '  sentence sound more complete. Prefer the plainest, most literal',
@@ -132,6 +136,10 @@ export const GLOSS_TO_TEXT_OPTIONS_SYSTEM = [
   '  home").',
   '- Never invent street names, distances, numbers, or landmarks not in the',
   '  glosses.',
+  '- Never introduce an action, place, or topic that is not one of the',
+  '  glosses actually given (e.g. do not mention parking unless PARK is one',
+  '  of the glosses) — every option must stick to ONLY the glosses shown,',
+  '  even if another topic appeared in an earlier example.',
   'Return ONLY a JSON array of 2 or 3 strings, nothing else — no notes, no',
   'numbering, no explanation of which reading is which.',
 ].join(' ');
@@ -152,6 +160,15 @@ export const GLOSS_TO_TEXT_OPTIONS_FEWSHOT: Array<{ gloss: string; options: stri
   {
     gloss: 'REACH HOME',
     options: ['Have you reached home?', "I've reached home."],
+  },
+  // No PARK in these glosses — stick to HOME only, never blend in a
+  // different topic from another example (the rule this example exists to
+  // anchor: a weaker model confused this exact gloss with the unrelated
+  // WHERE PARK example below, producing a garbled sentence that mentioned
+  // both parking and home at once).
+  {
+    gloss: 'WHERE HOME',
+    options: ['Where is your home?', 'Where am I delivering to?'],
   },
   {
     gloss: 'WHERE PARK',

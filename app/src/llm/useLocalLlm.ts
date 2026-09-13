@@ -16,8 +16,13 @@ import { load, localProvider, warmup } from './LocalLlmProvider';
  *  push only AFTER the app itself has created the folder (calling
  *  preloadLocalLlm() once does that). */
 export const MODELS_DIR = `${RNFS.ExternalDirectoryPath}/models`;
-export const MODEL_FILENAME = 'Qwen2.5-7B-Instruct-Q4_K_M.gguf';
+// Swapped from the 7B Q4_K_M model down to 3B: noticeably faster load/first-token
+// latency on-device, at an acceptable quality cost for gloss->sentence composition.
+export const MODEL_FILENAME = 'qwen2.5-3b-instruct-q4_k_m.gguf';
 const MODEL_PATH = `${MODELS_DIR}/${MODEL_FILENAME}`;
+// Path relative to android/app/src/main/assets — where the release build
+// bundles the GGUF (see android/app/build.gradle's noCompress).
+const ASSET_MODEL_PATH = `models/${MODEL_FILENAME}`;
 
 export type LocalLlmStatus = 'checking' | 'missing' | 'loading' | 'ready' | 'error';
 
@@ -57,7 +62,25 @@ export function preloadLocalLlm(): Promise<LocalLlmResult> {
       // here, and the exists() check below will catch that anyway.
     }
 
-    const exists = await RNFS.exists(MODEL_PATH);
+    let exists = await RNFS.exists(MODEL_PATH);
+    if (!exists) {
+      // Release builds bundle the GGUF as a raw, uncompressed Android asset
+      // (see android/app/build.gradle's noCompress) so a fresh install works
+      // with no manual `adb push` step — extract it to the real,
+      // mmap-able path llama.cpp needs, once, on first launch. Debug builds
+      // don't bundle the asset at all, so existsAssets() legitimately
+      // returns false there and this falls through to "missing" below.
+      try {
+        if (await RNFS.existsAssets(ASSET_MODEL_PATH)) {
+          await RNFS.copyFileAssets(ASSET_MODEL_PATH, MODEL_PATH);
+          exists = await RNFS.exists(MODEL_PATH);
+        }
+      } catch {
+        // Extraction failing just means the "missing" status below is
+        // accurate — nothing further to recover here.
+      }
+    }
+
     if (!exists) {
       return {
         status: 'missing',
