@@ -17,9 +17,9 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const theme = useTheme();
   const [memoryCount, setMemoryCount] = useState(0);
 
-  // Re-read on every focus (not just mount) so a sentence remembered on Call
-  // or Talk Aloud, or one forgotten on the Memory screen, updates this
-  // count the moment the person lands back on Home.
+  // Re-read on every focus (not just mount) so a sentence remembered on a
+  // call, or one forgotten on the Memory screen, updates this count the
+  // moment the person lands back on Home.
   useFocusEffect(
     useCallback(() => {
       let cancelled = false;
@@ -60,7 +60,7 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
       <View style={[styles.grid, { gap: theme.spacing.md }]}>
         <View style={[styles.row, { gap: theme.spacing.md }]}>
           <Tile
-            title="Call someone"
+            title="Call"
             description="Sign into a live voice call"
             icon="call"
             featured
@@ -80,20 +80,6 @@ export function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             description="Teach MUDRA+ a new sign"
             icon="sign"
             onPress={() => navigation.navigate('AddSign')}
-          />
-          <Tile
-            title="Chatbot"
-            description="Help phrasing what to say"
-            icon="chat"
-            onPress={() => navigation.navigate('Chat')}
-          />
-        </View>
-        <View style={[styles.row, { gap: theme.spacing.md }]}>
-          <Tile
-            title="Talk Aloud"
-            description="Sign a sentence, hear it spoken"
-            icon="volume"
-            onPress={() => navigation.navigate('TalkAloud')}
           />
           <Tile
             title="Receive on this phone"

@@ -76,9 +76,8 @@ export function isSameSentence(a: string | undefined, b: string | undefined): bo
  * skipping any LLM option that's word-for-word the same (trimmed, case-
  * insensitive) as one already remembered, so it's never shown twice. When
  * memory alone already fills every slot, `llmOptions` should be `[]` —
- * callers skip the LLM call entirely in that case (see CallScreen /
- * TalkAloudScreen's composeForSequence), since none of it could ever be
- * shown anyway.
+ * callers skip the LLM call entirely in that case (see CallScreen's
+ * composeForSequence), since none of it could ever be shown anyway.
  */
 export function withRememberedSentences(
   remembered: readonly string[],

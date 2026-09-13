@@ -1,4 +1,4 @@
-import type { TcpServer } from 'react-native-tcp-socket';
+import type { TcpServer, TcpSocket } from 'react-native-tcp-socket';
 import type Zeroconf from 'react-native-zeroconf';
 import { loadTcpSocket, loadZeroconf, SERVICE_PORT, SERVICE_PROTOCOL, SERVICE_TYPE } from './nativeModules';
 
@@ -17,6 +17,10 @@ export class AslRelayReceiver {
   private readonly zeroconf = loadZeroconf();
   private server: TcpServer | null = null;
   private zeroconfInstance: Zeroconf | null = null;
+  // The signer's phone, once connected — only ever one at a time (exactly two phones in the
+  // same room is the whole use case), kept so `sendText` has something to talk back through.
+  // TCP is full-duplex, so this is the SAME socket `onMessage` below reads from.
+  private senderSocket: TcpSocket | null = null;
 
   isAvailable(): boolean {
     return this.tcpSocket !== null && this.zeroconf !== null;
@@ -28,6 +32,7 @@ export class AslRelayReceiver {
     if (!tcpSocket || !ZeroconfClass || this.server) return;
 
     const server = tcpSocket.createServer((socket) => {
+      this.senderSocket = socket;
       let buffer = '';
       socket.on('data', (data) => {
         buffer += data.toString();
@@ -40,6 +45,9 @@ export class AslRelayReceiver {
         }
       });
       socket.on('error', () => undefined);
+      socket.on('close', () => {
+        if (this.senderSocket === socket) this.senderSocket = null;
+      });
     });
 
     server.listen({ port: SERVICE_PORT, host: '0.0.0.0' });
@@ -52,11 +60,20 @@ export class AslRelayReceiver {
     onStatusChange('listening');
   }
 
+  /** No-op when no sender phone is currently connected — callers (a "talk back" mic on the
+   *  Receive screen) don't need to gate on connection state just to speak a transcribed reply. */
+  sendText(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed || !this.senderSocket) return;
+    this.senderSocket.write(`${trimmed}\n`);
+  }
+
   stop(): void {
     this.zeroconfInstance?.unpublishService(RECEIVER_SERVICE_NAME);
     this.zeroconfInstance?.stop();
     this.zeroconfInstance = null;
     this.server?.close();
     this.server = null;
+    this.senderSocket = null;
   }
 }
