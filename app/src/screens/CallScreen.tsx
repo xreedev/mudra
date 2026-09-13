@@ -125,6 +125,21 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relay.status, contact]);
 
+  // A real "connected" clock, counting only while a receiver is actually connected — replaces a
+  // fixed "Connected · 00:42" that used to show the instant a contact was picked, whether or not
+  // the relay had found anyone yet. That was the confusing part: it read as connected even while
+  // still scanning, or after the receiver dropped.
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (relay.status !== 'connected') {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => clearInterval(interval);
+  }, [relay.status]);
+
   // The signer can't hear their own phone either way, so it never plays anything out loud —
   // relaying is the only output. Sending is a no-op until a receiver is actually connected (see
   // useAslRelaySender), which is exactly right for "Just practice": nothing goes anywhere, the
@@ -280,6 +295,31 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     );
   }
 
+  // Call bar subtitle + badge: reflects the real relay connection, not just whether a contact
+  // was picked, so "LIVE" only ever shows once a receiver phone has actually answered.
+  const minutes = String(Math.floor(elapsed / 60)).padStart(2, '0');
+  const seconds = String(elapsed % 60).padStart(2, '0');
+  const callStatusLabel = !active
+    ? 'Sign, then it’s sent'
+    : relay.status === 'connected'
+      ? `Connected · ${minutes}:${seconds}`
+      : relay.status === 'connecting'
+        ? `Connecting to ${active.name}…`
+        : relay.status === 'disconnected'
+          ? 'Lost connection — looking again…'
+          : relay.status === 'unavailable'
+            ? 'Relay unavailable on this device'
+            : `Looking for ${active.name}’s phone…`;
+  const callBadgeLabel = !active
+    ? 'ON DEVICE'
+    : relay.status === 'connected'
+      ? 'LIVE'
+      : relay.status === 'connecting'
+        ? 'CONNECTING'
+        : relay.status === 'unavailable'
+          ? 'OFFLINE'
+          : 'SEARCHING';
+
   return (
     <Screen dark edgeToEdge>
       <CameraStage
@@ -333,7 +373,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 {active?.name ?? 'Practice'}
               </Text>
               <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                {active ? 'Connected · 00:42' : 'Sign, then confirm to hear it'}
+                {callStatusLabel}
               </Text>
             </View>
             <View
@@ -346,9 +386,11 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 },
               ]}
             >
-              {active ? <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} /> : null}
+              {relay.status === 'connected' ? (
+                <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
+              ) : null}
               <Text variant="caption" style={styles.onDark}>
-                {active ? 'LIVE' : 'ON DEVICE'}
+                {callBadgeLabel}
               </Text>
             </View>
             <IconButton
