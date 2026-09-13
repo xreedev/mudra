@@ -18,10 +18,6 @@ export const SEED_SIGNS: CustomSign[] = [
   { id: '3', label: 'AMBULANCE', samples: 30 },
 ];
 
-/** The draft box starts empty until the user actually signs something — there's nothing to
- *  preview before that. */
-export const DEMO_DRAFT = '';
-
 /** Sent once, automatically, the moment a receiver phone connects — so whoever picks up knows
  *  right away that what follows is sign-converted speech rather than a real voice. Never shown
  *  as the on-screen draft; it only ever goes out over the relay. */
