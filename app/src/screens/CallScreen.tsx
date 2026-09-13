@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  Button,
   CameraStage,
   type CameraStageHandle,
   GlossBubbles,
@@ -24,7 +23,6 @@ import {
 import { useLocalLlm } from '../llm/useLocalLlm';
 import { useLiveHandGestures } from '../recognition/useLiveHandGestures';
 import { useAslRelaySender } from '../relay/useAslRelaySender';
-import { LocalSpeaker, type SpeakingState } from '../speech/LocalSpeaker';
 import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
@@ -39,8 +37,10 @@ import type { ScreenProps } from '../navigation/types';
  * floats over the video rather than displacing it.
  *
  * Signing composes one or more candidate readings of the sequence so far; tapping one is the
- * whole action — it's spoken/relayed immediately and the sequence resets for the next sentence.
- * There's no separate confirm step, so reading before tapping is what stands in for it.
+ * whole action — it's relayed immediately and the sequence resets for the next sentence. There's
+ * no separate confirm step, so reading before tapping is what stands in for it. Nothing is ever
+ * played out loud on this phone — the signer can't hear it either way — only the receiver's
+ * phone speaks what comes through.
  */
 
 /** Diameter of the white placement guide — kept in sync with the rectangle below. */
@@ -57,7 +57,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const [contact, setContact] = useState<string | null>(null);
   // Signing with no one to relay to but yourself — what used to be the separate "Talk Aloud"
   // screen — is reachable here too, via "Just practice" on the contact picker below, rather
-  // than requiring a real contact just to sign and hear something spoken back.
+  // than requiring a real contact just to see a sentence resolve.
   const [practiceMode, setPracticeMode] = useState(false);
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
@@ -108,9 +108,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // the local network and auto-connects. Tapping a reading below relays it to that phone, so a
   // hearing person can hold the receiving phone instead of needing to be within earshot.
   const relay = useAslRelaySender(handleRelayMessage);
-  const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
-  const speaker = useRef(new LocalSpeaker()).current;
-  useEffect(() => () => speaker.stop(), [speaker]);
 
   // The moment a call to an actual contact connects, it's told once that what follows is
   // sign-converted speech rather than a real voice — never shown as the on-screen draft, it only
@@ -129,19 +126,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [relay.status, contact]);
 
-  // A connected receiver already speaks whatever it's sent (see ReceiveScreen) — playing it out
-  // loud here too would just echo the same sentence twice. Local TTS only kicks in when there's
-  // no one to relay to (Just practice, or still scanning for a receiver).
+  // The signer can't hear their own phone either way, so it never plays anything out loud —
+  // relaying is the only output. Sending is a no-op until a receiver is actually connected (see
+  // useAslRelaySender), which is exactly right for "Just practice": nothing goes anywhere, the
+  // point there is just to see a sentence resolve, not to hear it.
   const speak = useCallback(
     (text: string) => {
       if (!text.trim()) return;
-      if (relay.status === 'connected') {
-        relay.sendText(text);
-      } else {
-        speaker.speak(text, setSpeakingState);
-      }
+      relay.sendText(text);
     },
-    [speaker, relay],
+    [relay],
   );
 
   // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
@@ -333,10 +327,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               accessibilityLabel="End and go back"
               variant="translucent"
               size={38}
-              onPress={() => {
-                speaker.stop();
-                navigation.goBack();
-              }}
+              onPress={navigation.goBack}
             />
             <View style={styles.callBarTitle}>
               <Text variant="bodyStrong" style={styles.onDark}>
@@ -444,8 +435,8 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               </Text>
 
               {readingOptions.length > 0 ? (
-                // Tapping a reading is the whole action — it's spoken/relayed immediately, so
-                // there's nothing further to confirm. When there's more than one, the glosses
+                // Tapping a reading is the whole action — it's relayed immediately, so there's
+                // nothing further to confirm. When there's more than one, the glosses
                 // alone can't say whether the signer is the customer or the driver ("ARRIVED
                 // HOME RIGHT LEFT" means opposite things either way) — rather than the LLM
                 // silently guessing, it offers a few genuinely different readings and the person
@@ -457,7 +448,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                       <Pressable
                         key={`${option}-${index}`}
                         accessibilityRole="button"
-                        accessibilityLabel={`Speak: ${option}`}
+                        accessibilityLabel={`Send: ${option}`}
                         onPress={() => {
                           speak(option);
                           rememberSentenceChoice(recognized, option).catch(() => undefined);
@@ -521,15 +512,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
               ) : null}
             </View>
 
-            {speakingState === 'speaking' ? (
-              <Button label="Stop" icon="stop" size="lg" block onPress={() => speaker.stop()} />
-            ) : null}
-            {speakingState === 'unavailable' ? (
-              <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                Voice output needs a development build with react-native-tts linked.
-              </Text>
-            ) : null}
-
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
               <IconButton
                 name={muted ? 'mic-off' : 'mic'}
@@ -544,10 +526,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 accessibilityLabel="End call"
                 variant="danger"
                 size={64}
-                onPress={() => {
-                  speaker.stop();
-                  navigation.goBack();
-                }}
+                onPress={navigation.goBack}
               />
               <IconButton
                 name="chat"
@@ -566,7 +545,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
 
 /** Who to call. An emergency contact is visually separated so it cannot be hit by accident.
  *  "Just practice" is the no-call-partner path — what used to be its own "Talk Aloud" screen —
- *  for signing and hearing something spoken back with no one on the other end. */
+ *  for signing and seeing a sentence resolve with no one on the other end to send it to. */
 function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; onSkip: () => void }) {
   const theme = useTheme();
 
@@ -575,7 +554,7 @@ function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; o
       <View style={{ paddingTop: theme.spacing.lg }}>
         <Text variant="title">Call</Text>
         <Text variant="body" tone="muted" style={{ marginTop: theme.spacing.xs }}>
-          Pick who to reach. You will confirm every sentence before it is spoken.
+          Pick who to reach. Sign a sentence, then tap it to send.
         </Text>
       </View>
 
@@ -642,7 +621,7 @@ function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; o
           <View style={[styles.contactText, { gap: theme.spacing.xs / 2 }]}>
             <Text variant="bodyStrong">Just practice</Text>
             <Text variant="caption" tone="muted">
-              Sign a sentence, hear it spoken — no call partner needed
+              Sign a sentence and see it resolve — no call partner needed
             </Text>
           </View>
           <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
