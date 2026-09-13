@@ -6,76 +6,48 @@ import { useTheme } from '../theme';
 
 export interface TileProps {
   title: string;
-  description: string;
+  /** One short line under the title — what it does, or a live count. */
+  subtitle: string;
   icon: IconName;
   onPress: () => void;
-  /** The one primary destination on the home screen. */
-  featured?: boolean;
-  /** Small trailing note, e.g. a count. */
-  meta?: string;
 }
 
 /**
- * A home-screen destination.
+ * A secondary home destination, laid out two to a row.
  *
- * Tiles are tall, high-contrast and few in number: someone who needs to place an emergency call
- * should be able to hit the right one without reading carefully. The featured tile is visually
- * louder for the same reason.
+ * The glyph sits alone at the top and the label pair at the bottom, with the gap between them
+ * doing the work a chip background used to: at arm's length the icon is what you aim at, and the
+ * text is what confirms you aimed right. The loud primary action lives in the hero card above,
+ * so tiles are deliberately quiet — outline only, no fill.
  */
-export function Tile({ title, description, icon, onPress, featured = false, meta }: TileProps) {
+export function Tile({ title, subtitle, icon, onPress }: TileProps) {
   const theme = useTheme();
-
-  const background = featured ? theme.colors.accent : theme.colors.surfaceRaised;
-  const foreground = featured ? theme.colors.accentText : theme.colors.text;
-  const mutedForeground = featured ? theme.colors.accentText : theme.colors.textMuted;
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${description}`}
+      accessibilityLabel={`${title}. ${subtitle}`}
       onPress={onPress}
       style={({ pressed }) => [
         styles.tile,
         {
-          backgroundColor: background,
-          borderColor: featured ? 'transparent' : theme.colors.border,
+          backgroundColor: theme.colors.surfaceRaised,
+          borderColor: theme.colors.border,
           borderRadius: theme.radius.xl,
           padding: theme.spacing.lg,
+          gap: theme.spacing['2xl'],
           opacity: pressed ? 0.88 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],
         },
       ]}
     >
-      <View
-        style={[
-          styles.chip,
-          {
-            backgroundColor: featured ? 'rgba(255,255,255,0.18)' : theme.colors.surface,
-            borderRadius: theme.radius.md,
-          },
-        ]}
-      >
-        <Icon name={icon} size={22} color={foreground} />
-      </View>
-
-      <View style={styles.spacer} />
-
-      <Text variant="heading" style={{ color: foreground }}>
-        {title}
-      </Text>
-      <Text
-        variant="caption"
-        style={[
-          { color: mutedForeground, opacity: featured ? 0.9 : 1, marginVertical: theme.spacing.xs / 2 },
-        ]}
-      >
-        {description}
-      </Text>
-      {meta ? (
-        <Text variant="caption" style={{ color: mutedForeground, opacity: featured ? 0.8 : 1 }}>
-          {meta}
+      <Icon name={icon} size={22} color={theme.colors.text} />
+      <View style={styles.labels}>
+        <Text variant="bodyStrong">{title}</Text>
+        <Text variant="caption" tone="muted">
+          {subtitle}
         </Text>
-      ) : null}
+      </View>
     </Pressable>
   );
 }
@@ -83,9 +55,8 @@ export function Tile({ title, description, icon, onPress, featured = false, meta
 const styles = StyleSheet.create({
   tile: {
     flex: 1,
-    minHeight: 158,
+    justifyContent: 'space-between',
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  chip: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  spacer: { flex: 1, minHeight: 12 },
+  labels: { gap: 2 },
 });
