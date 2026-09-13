@@ -46,7 +46,7 @@ $AppDir = Resolve-Path (Join-Path $PSScriptRoot '..')
 $AndroidDir = Join-Path $AppDir 'android'
 $GradlePropertiesPath = Join-Path $AndroidDir 'gradle.properties'
 $UseLocalLlmPath = Join-Path $AppDir 'src\llm\useLocalLlm.ts'
-$AssetsModelsDir = Join-Path $AndroidDir 'app\src\main\assets\models'
+$AssetsModelsDir = Join-Path $AndroidDir 'app\src\release\assets\models'
 
 # --- 1. Resolve the expected filename from the app's own source, so the
 #        bundled asset always matches what useLocalLlm.ts actually looks for.

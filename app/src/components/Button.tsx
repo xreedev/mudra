@@ -10,6 +10,10 @@ export type ButtonSize = 'md' | 'lg';
 export interface ButtonProps {
   label: string;
   onPress?: () => void;
+  /** Fires on touch-down, independent of onPress — for press-and-hold controls (e.g. record). */
+  onPressIn?: () => void;
+  /** Fires on touch-up/release, independent of onPress. */
+  onPressOut?: () => void;
   variant?: ButtonVariant;
   size?: ButtonSize;
   icon?: IconName;
@@ -28,6 +32,8 @@ export interface ButtonProps {
 export function Button({
   label,
   onPress,
+  onPressIn,
+  onPressOut,
   variant = 'primary',
   size = 'md',
   icon,
@@ -66,6 +72,8 @@ export function Button({
       accessibilityState={{ disabled: inactive, busy }}
       accessibilityLabel={label}
       onPress={inactive ? undefined : onPress}
+      onPressIn={inactive ? undefined : onPressIn}
+      onPressOut={inactive ? undefined : onPressOut}
       style={({ pressed }) => [
         styles.base,
         {
