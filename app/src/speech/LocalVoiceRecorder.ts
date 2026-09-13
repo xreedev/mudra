@@ -122,30 +122,21 @@ export class LocalVoiceRecorder {
   }
 
   private async doStart(): Promise<void> {
-    console.log('[voice-recorder] doStart: recording already?', this.recording);
     if (this.recording) return;
 
     this.stats = { chunkCount: 0, totalBytes: 0, lastLevel: 0, peakLevel: 0 };
 
     if (!this.context) {
-      console.log('[voice-recorder] initWhisper...');
       this.context = await initWhisper({ filePath: LOCAL_WHISPER_MODEL_ASSET });
-      console.log('[voice-recorder] initWhisper done');
     }
 
     this.filePath = `${RNFS.CachesDirectoryPath}/voice-message-${Date.now()}.wav`;
-    console.log('[voice-recorder] wav path:', this.filePath);
     this.wavWriter = new WavFileWriter(RNFS, this.filePath, AUDIO_CONFIG);
     await this.wavWriter!.initialize();
-    console.log('[voice-recorder] wavWriter initialized');
 
     this.audioStream = new AudioPcmStreamAdapter();
-    console.log('[voice-recorder] initializing audio stream...');
     await this.audioStream!.initialize(AUDIO_CONFIG);
-    console.log('[voice-recorder] audio stream initialized');
-    this.audioStream!.onError((error) => {
-      console.log('[voice-recorder] audio stream onError:', error);
-    });
+    this.audioStream!.onError(() => undefined);
     this.audioStream!.onData((chunk) => {
       this.wavWriter?.appendAudioData(chunk.data).catch(() => undefined);
 
@@ -158,15 +149,12 @@ export class LocalVoiceRecorder {
       };
       this.onLevel?.(this.stats);
     });
-    console.log('[voice-recorder] starting audio stream...');
     await this.audioStream!.start();
-    console.log('[voice-recorder] audio stream started');
 
     this.recording = true;
   }
 
   private async doStop(): Promise<string> {
-    console.log('[voice-recorder] doStop: recording?', this.recording, 'stats:', JSON.stringify(this.stats));
     if (!this.recording) return '';
     this.recording = false;
 

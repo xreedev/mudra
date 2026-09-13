@@ -8,7 +8,7 @@ import { LocalVoiceRecorder, type VoiceRecorderStats } from '../speech/LocalVoic
 import { useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
-type RecordState = 'idle' | 'recording' | 'transcribing';
+type RecordState = 'idle' | 'starting' | 'recording' | 'transcribing';
 
 interface TranscriptEntry {
   text: string;
@@ -47,15 +47,17 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
   const [recordError, setRecordError] = useState<string | null>(null);
   const [recordStats, setRecordStats] = useState<VoiceRecorderStats | null>(null);
   const [chatText, setChatText] = useState('');
-  // Pure diagnostic: increments synchronously on every tap, with nothing async in the way —
-  // proves whether a touch is reaching React at all, independent of permissions/recorder logic.
-  const [tapCount, setTapCount] = useState(0);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const speaker = useRef(new LocalSpeaker()).current;
   const recorder = useRef(new LocalVoiceRecorder()).current;
   const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Holding is short enough that a release can land while `recorder.start()` is still loading
+  // the model — there's no "recording" to stop yet at that instant. This flags that the finger
+  // already lifted, so the moment start() actually finishes, it's immediately followed by a stop
+  // instead of settling into a recording nobody is still holding for.
+  const releasedEarlyRef = useRef(false);
 
   const handleMessage = useCallback(
     (text: string) => {
@@ -77,47 +79,15 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
     }
   }, []);
 
-  const handleRecordStart = useCallback(async () => {
-    console.log('[voice-record] tap start, recordState =', recordState);
-    if (recordState !== 'idle') return;
-    setRecordError(null);
-    setRecordStats(null);
-
-    if (Platform.OS === 'android') {
-      const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-      console.log('[voice-record] permission result:', granted);
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-        setRecordError('Microphone permission denied');
-        return;
-      }
-    }
-    try {
-      console.log('[voice-record] calling recorder.start()...');
-      await recorder.start(setRecordStats);
-      console.log('[voice-record] recorder.start() resolved OK');
-    } catch (e) {
-      console.log('[voice-record] recorder.start() THREW:', e);
-      setRecordError(e instanceof Error ? e.message : 'Could not start recording');
-      return;
-    }
-    setRecordSeconds(0);
-    setRecordState('recording');
-    recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
-  }, [recordState, recorder]);
-
   const handleRecordStop = useCallback(async () => {
-    console.log('[voice-record] tap stop, recordState =', recordState);
     if (recordState !== 'recording') return;
     clearRecordTimer();
     setRecordState('transcribing');
     const stats = recorder.getStats();
-    console.log('[voice-record] stats at stop:', JSON.stringify(stats));
     let text = '';
     try {
       text = await recorder.stop();
-      console.log('[voice-record] recorder.stop() resolved, text =', JSON.stringify(text));
     } catch (e) {
-      console.log('[voice-record] recorder.stop() THREW:', e);
       setRecordError(e instanceof Error ? e.message : 'Could not transcribe recording');
     }
     setRecordState('idle');
@@ -136,15 +106,51 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
     }
   }, [recordState, recorder, relay, clearRecordTimer]);
 
-  const handleRecordToggle = useCallback(() => {
-    setTapCount((c) => c + 1);
-    console.log('[voice-record] Pressable onPress fired, recordState =', recordState);
-    if (recordState === 'idle') {
-      handleRecordStart();
-    } else if (recordState === 'recording') {
+  // Press and hold: a finger down starts recording, lifting it stops and sends — the same
+  // push-to-talk shape as a walkie-talkie, so there's nothing to remember to tap a second time.
+  const handleHoldStart = useCallback(async () => {
+    if (recordState !== 'idle') return;
+    releasedEarlyRef.current = false;
+    // Shown immediately, before anything async — loading the on-device Whisper model on the
+    // first recording of a session takes a few real seconds, and with no state change to show
+    // for it the button just sits there looking unpressed the whole time.
+    setRecordState('starting');
+    setRecordError(null);
+    setRecordStats(null);
+
+    if (Platform.OS === 'android') {
+      const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+      if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+        setRecordState('idle');
+        setRecordError('Microphone permission denied');
+        return;
+      }
+    }
+    try {
+      await recorder.start(setRecordStats);
+    } catch (e) {
+      setRecordState('idle');
+      setRecordError(e instanceof Error ? e.message : 'Could not start recording');
+      return;
+    }
+    setRecordSeconds(0);
+    setRecordState('recording');
+    recordTimerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+
+    // The finger already lifted while all of the above was still loading — there was nothing
+    // recording yet to stop when onPressOut fired, so catch up on it now.
+    if (releasedEarlyRef.current) {
       handleRecordStop();
     }
-  }, [recordState, handleRecordStart, handleRecordStop]);
+  }, [recordState, recorder, handleRecordStop]);
+
+  const handleHoldEnd = useCallback(() => {
+    if (recordState === 'starting') {
+      releasedEarlyRef.current = true;
+      return;
+    }
+    handleRecordStop();
+  }, [recordState, handleRecordStop]);
 
   const handleSendChat = useCallback(() => {
     const text = chatText.trim();
@@ -188,26 +194,30 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
   const recordSecondsDisplay = String(recordSeconds % 60).padStart(2, '0');
   const centerLabel = recordError
     ? 'RECORDING FAILED'
-    : recordState === 'recording'
-      ? 'RECORDING'
-      : recordState === 'transcribing'
-        ? 'TRANSCRIBING'
-        : speaking
-          ? 'SPEAKING'
-          : latestEntry
-            ? latestEntry.from === 'me'
-              ? 'YOU SAID'
-              : 'LAST HEARD'
-            : 'WAITING FOR SIGNS';
+    : recordState === 'starting'
+      ? 'STARTING'
+      : recordState === 'recording'
+        ? 'RECORDING'
+        : recordState === 'transcribing'
+          ? 'TRANSCRIBING'
+          : speaking
+            ? 'SPEAKING'
+            : latestEntry
+              ? latestEntry.from === 'me'
+                ? 'YOU SAID'
+                : 'LAST HEARD'
+              : 'WAITING FOR SIGNS';
   const centerBody = recordError
     ? recordError
-    : recordState === 'recording'
-      ? `${recordMinutes}:${recordSecondsDisplay}`
-      : recordState === 'transcribing'
-        ? 'Converting your voice message...'
-        : latestEntry?.text ?? 'Keep this open while the other phone signs to you.';
-  const avatarActive = speaking || recordState === 'recording';
-  const avatarIcon = recordState === 'recording' ? 'mic' : speaking ? 'volume' : 'wifi';
+    : recordState === 'starting'
+      ? 'Loading the on-device voice recorder…'
+      : recordState === 'recording'
+        ? `${recordMinutes}:${recordSecondsDisplay}`
+        : recordState === 'transcribing'
+          ? 'Converting your voice message...'
+          : latestEntry?.text ?? 'Keep this open while the other phone signs to you.';
+  const avatarActive = speaking || recordState === 'recording' || recordState === 'starting';
+  const avatarIcon = recordState === 'recording' || recordState === 'starting' ? 'mic' : speaking ? 'volume' : 'wifi';
 
   return (
     <Screen dark edgeToEdge>
@@ -385,26 +395,35 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
 
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Record voice message"
+              accessibilityLabel="Hold to record a voice message, release to send"
               disabled={recordState === 'transcribing'}
-              onPress={handleRecordToggle}
+              onPressIn={handleHoldStart}
+              onPressOut={handleHoldEnd}
               style={({ pressed }) => [
                 styles.recordButton,
                 {
                   borderRadius: theme.radius.md,
                   backgroundColor:
-                    recordState === 'recording' ? theme.colors.danger : theme.colors.accent,
+                    recordState === 'recording' || recordState === 'starting'
+                      ? theme.colors.danger
+                      : theme.colors.accent,
                   opacity: recordState === 'transcribing' ? 0.45 : pressed ? 0.8 : 1,
                 },
               ]}
             >
-              <Icon name={recordState === 'recording' ? 'stop' : 'mic'} size={20} color="#FFFFFF" />
+              <Icon
+                name={recordState === 'recording' || recordState === 'starting' ? 'stop' : 'mic'}
+                size={20}
+                color="#FFFFFF"
+              />
               <Text variant="bodyStrong" style={styles.onDark}>
                 {recordState === 'recording'
-                  ? `Stop recording · ${recordMinutes}:${recordSecondsDisplay}`
+                  ? `Recording · ${recordMinutes}:${recordSecondsDisplay} — release to send`
                   : recordState === 'transcribing'
                     ? 'Transcribing...'
-                    : `Start recording a voice message (taps: ${tapCount})`}
+                    : recordState === 'starting'
+                      ? 'Starting…'
+                      : 'Hold to talk'}
               </Text>
             </Pressable>
 
