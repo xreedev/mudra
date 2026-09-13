@@ -29,13 +29,14 @@ import { HIT_SLOP_SIZE, useTheme } from '../theme';
 import type { ScreenProps } from '../navigation/types';
 
 /**
- * Call someone.
+ * Call.
  *
- * Two states, one screen: pick who to call, then the live call. Live layout is a
- * full-bleed camera behind everything — signing is the input method, so the preview
- * gets the whole screen — with the call bar, recognized glosses, draft sentence, and
- * call controls floating on top of it as translucent overlays, the way a normal video
- * call's chrome floats over the video rather than displacing it.
+ * The app's one signing-into-speech screen. Three states: pick who to call (or "Just practice"
+ * for no one — what used to be the separate "Talk Aloud" screen), then the live view. Live
+ * layout is a full-bleed camera behind everything — signing is the input method, so the preview
+ * gets the whole screen — with the call bar, recognized glosses, draft sentence, and call
+ * controls floating on top of it as translucent overlays, the way a normal video call's chrome
+ * floats over the video rather than displacing it.
  *
  * The draft is never spoken until "Confirm & speak" is pressed. That gate is the whole safety
  * model of the product, so it is a full-width primary button and nothing sits near it.
@@ -53,6 +54,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const [contact, setContact] = useState<string | null>(null);
+  // Signing with no one to relay to but yourself — what used to be the separate "Talk Aloud"
+  // screen — is reachable here too, via "Just practice" on the contact picker below, rather
+  // than requiring a real contact just to sign and hear something spoken back.
+  const [practiceMode, setPracticeMode] = useState(false);
   const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   const [draft, setDraft] = useState(DEMO_DRAFT);
@@ -106,14 +111,23 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // to be within earshot.
   const relay = useAslRelaySender(handleRelayMessage);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
+  // Which exact sentence is currently playing — lets each candidate in "WHO'S SPEAKING? PICK
+  // ONE" below show its own stop icon rather than only the main draft knowing it's speaking.
+  const [spoken, setSpoken] = useState<string | null>(null);
   const speaker = useRef(new LocalSpeaker()).current;
   useEffect(() => () => speaker.stop(), [speaker]);
 
-  const speakDraft = useCallback(() => {
-    if (!draft.trim()) return;
-    speaker.speak(draft, setSpeakingState);
-    relay.sendText(draft);
-  }, [draft, speaker, relay]);
+  const speak = useCallback(
+    (text: string) => {
+      if (!text.trim()) return;
+      speaker.speak(text, (state) => {
+        setSpeakingState(state);
+        setSpoken(state === 'idle' ? null : text);
+      });
+      relay.sendText(text);
+    },
+    [speaker, relay],
+  );
 
   // On-device LLM: turns the accumulated gloss sequence ("WHERE", "HOSPITAL")
   // into a fluent sentence ("Where is the hospital?"). Loaded once per app
@@ -148,12 +162,22 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // "Confirm & speak" is the confirmation gate (see the screen doc comment) — so that tap is
   // also the moment the pick is remembered for this exact sign sequence, the moment it's relayed
   // to a connected receiver phone, and the moment the recognized-signs panel closes for the next
-  // one.
+  // one. speakOption below (the per-candidate preview icon) does the same three things directly
+  // for one specific candidate, bypassing the need to select it as the draft first.
   const confirmAndSpeak = useCallback(() => {
-    speakDraft();
+    speak(draft);
     rememberSentenceChoice(recognized, draft).catch(() => undefined);
     resetRecognition();
-  }, [speakDraft, recognized, draft, resetRecognition]);
+  }, [speak, recognized, draft, resetRecognition]);
+
+  const speakOption = useCallback(
+    (option: string) => {
+      speak(option);
+      rememberSentenceChoice(recognized, option).catch(() => undefined);
+      resetRecognition();
+    },
+    [speak, recognized, resetRecognition],
+  );
 
   // The one place a sign sequence's remembered sentences + LLM options are
   // looked up and merged — called both when a new sign completes (below)
@@ -256,7 +280,7 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
 
   const active = SEED_CONTACTS.find((entry) => entry.id === contact);
 
-  if (!active) {
+  if (!active && !practiceMode) {
     return (
       <ContactPicker
         onSelect={(id) => {
@@ -265,6 +289,13 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
           setDraft(DEMO_DRAFT);
           setDraftOptions([]);
           setContact(id);
+        }}
+        onSkip={() => {
+          setRecognized([]);
+          lastAppendedLabel.current = null;
+          setDraft(DEMO_DRAFT);
+          setDraftOptions([]);
+          setPracticeMode(true);
         }}
       />
     );
@@ -323,10 +354,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             />
             <View style={styles.callBarTitle}>
               <Text variant="bodyStrong" style={styles.onDark}>
-                {active.name}
+                {active?.name ?? 'Practice'}
               </Text>
               <Text variant="caption" style={[styles.onDark, styles.dim]}>
-                Connected · 00:42
+                {active ? 'Connected · 00:42' : 'Sign, then confirm to hear it'}
               </Text>
             </View>
             <View
@@ -339,9 +370,9 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 },
               ]}
             >
-              <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} />
+              {active ? <View style={[styles.liveDot, { backgroundColor: theme.colors.danger }]} /> : null}
               <Text variant="caption" style={styles.onDark}>
-                LIVE
+                {active ? 'LIVE' : 'ON DEVICE'}
               </Text>
             </View>
             <IconButton
@@ -457,6 +488,10 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   {draftOptions.map((option, index) => {
                     const selected = option === draft;
                     const fromMemory = rememberedSentences.some((r) => isSameSentence(option, r));
+                    // Speaking a specific candidate directly, distinct from the row tap below
+                    // (which only selects), so previewing one never bypasses "Confirm & speak"
+                    // for the one you actually meant to send.
+                    const speakingThis = speakingState === 'speaking' && spoken === option;
                     return (
                       <Pressable
                         key={`${option}-${index}`}
@@ -505,6 +540,13 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                             </View>
                           ) : null}
                         </View>
+                        <IconButton
+                          name={speakingThis ? 'stop' : 'volume'}
+                          accessibilityLabel={speakingThis ? 'Stop' : `Speak: ${option}`}
+                          variant={speakingThis ? 'accent' : 'translucent'}
+                          size={36}
+                          onPress={() => (speakingThis ? speaker.stop() : speakOption(option))}
+                        />
                       </Pressable>
                     );
                   })}
@@ -599,14 +641,16 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   );
 }
 
-/** Who to call. An emergency contact is visually separated so it cannot be hit by accident. */
-function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
+/** Who to call. An emergency contact is visually separated so it cannot be hit by accident.
+ *  "Just practice" is the no-call-partner path — what used to be its own "Talk Aloud" screen —
+ *  for signing and hearing something spoken back with no one on the other end. */
+function ContactPicker({ onSelect, onSkip }: { onSelect: (id: string) => void; onSkip: () => void }) {
   const theme = useTheme();
 
   return (
     <Screen scroll>
       <View style={{ paddingTop: theme.spacing.lg }}>
-        <Text variant="title">Call someone</Text>
+        <Text variant="title">Call</Text>
         <Text variant="body" tone="muted" style={{ marginTop: theme.spacing.xs }}>
           Pick who to reach. You will confirm every sentence before it is spoken.
         </Text>
@@ -648,6 +692,38 @@ function ContactPicker({ onSelect }: { onSelect: (id: string) => void }) {
             <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
           </Pressable>
         ))}
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Just practice — sign with no one to call"
+          onPress={onSkip}
+          style={({ pressed }) => [
+            styles.contactRow,
+            {
+              gap: theme.spacing.md,
+              borderColor: theme.colors.border,
+              borderRadius: theme.radius.lg,
+              padding: theme.spacing.lg,
+              opacity: pressed ? 0.85 : 1,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.avatar,
+              { backgroundColor: theme.colors.surface, borderRadius: theme.radius.md },
+            ]}
+          >
+            <Icon name="volume" size={20} color={theme.colors.text} />
+          </View>
+          <View style={[styles.contactText, { gap: theme.spacing.xs / 2 }]}>
+            <Text variant="bodyStrong">Just practice</Text>
+            <Text variant="caption" tone="muted">
+              Sign a sentence, hear it spoken — no call partner needed
+            </Text>
+          </View>
+          <Icon name="chevron-right" size={20} color={theme.colors.textMuted} />
+        </Pressable>
       </View>
 
       {SEED_CONTACTS.filter((entry) => entry.emergency).map((entry) => (

@@ -1,15 +1,7 @@
 import React from 'react';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import {
-  AddSignScreen,
-  CallScreen,
-  ChatScreen,
-  HomeScreen,
-  MemoryScreen,
-  ReceiveScreen,
-  TalkAloudScreen,
-} from '../screens';
+import { AddSignScreen, CallScreen, HomeScreen, MemoryScreen, ReceiveScreen } from '../screens';
 import { useTheme } from '../theme';
 import type { RootStackParamList } from './types';
 
@@ -49,11 +41,9 @@ export function RootNavigator() {
       >
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Call" component={CallScreen} />
-        <Stack.Screen name="TalkAloud" component={TalkAloudScreen} />
         <Stack.Screen name="Receive" component={ReceiveScreen} />
         <Stack.Screen name="Memory" component={MemoryScreen} />
         <Stack.Screen name="AddSign" component={AddSignScreen} />
-        <Stack.Screen name="Chat" component={ChatScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

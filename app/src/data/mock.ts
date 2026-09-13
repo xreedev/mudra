@@ -18,36 +18,6 @@ export const SEED_SIGNS: CustomSign[] = [
   { id: '3', label: 'AMBULANCE', samples: 30 },
 ];
 
-export interface ChatMessage {
-  id: string;
-  author: 'user' | 'assistant';
-  body: string;
-  time: string;
-}
-
-export const SEED_CHAT: ChatMessage[] = [
-  {
-    id: '1',
-    author: 'assistant',
-    body: 'Hi. Ask me anything, or sign it — I can help you phrase what you want to say on a call.',
-    time: '09:14',
-  },
-  {
-    id: '2',
-    author: 'user',
-    body: 'I need to ask the pharmacy if my prescription is ready',
-    time: '09:15',
-  },
-  {
-    id: '3',
-    author: 'assistant',
-    body: 'Try: "Hello, this is a call through an assistant. Is the prescription for Metformin ready for collection?"',
-    time: '09:15',
-  },
-];
-
-/** The gloss sequence the call screen shows as "just recognized". */
-export const DEMO_RECOGNIZED = ['ME', 'NEED', 'METFORMIN', 'ONE', 'STRIP'];
 export const DEMO_DRAFT = 'Hi, I am Safar';
 
 export interface Contact {

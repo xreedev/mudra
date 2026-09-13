@@ -14,9 +14,9 @@ import type { ScreenProps } from '../navigation/types';
  * Memory: sentences remembered per sign sequence.
  *
  * Every entry here was picked automatically — the first time a sign sequence's sentence is
- * confirmed on Call or Talk Aloud, it's remembered so the same signs resurface that pick next
- * time instead of asking the person to choose again. There's nothing to compose manually; this
- * screen only reviews and forgets what's already been learned.
+ * confirmed on a call, it's remembered so the same signs resurface that pick next time instead
+ * of asking the person to choose again. There's nothing to compose manually; this screen only
+ * reviews and forgets what's already been learned.
  */
 export function MemoryScreen(_: ScreenProps<'Memory'>) {
   const theme = useTheme();
@@ -98,7 +98,7 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
           <EmptyState
             icon="memory"
             title="Nothing remembered yet"
-            body="Sign into a call or Talk Aloud and confirm a sentence — it's saved here so the same signs recall it next time."
+            body="Sign into a call and confirm a sentence — it's saved here so the same signs recall it next time."
           />
         }
       />
@@ -106,7 +106,7 @@ export function MemoryScreen(_: ScreenProps<'Memory'>) {
       <ConfirmModal
         visible={confirmingClear}
         title="Clear memory?"
-        message={`This forgets all ${signMemory.length} remembered sentence${signMemory.length === 1 ? '' : 's'}. Call and Talk Aloud will fall back to fresh LLM readings.`}
+        message={`This forgets all ${signMemory.length} remembered sentence${signMemory.length === 1 ? '' : 's'}. Calls will fall back to fresh LLM readings.`}
         confirmLabel="Clear all"
         confirmVariant="danger"
         cancelLabel="Cancel"

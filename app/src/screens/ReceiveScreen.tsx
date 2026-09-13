@@ -18,21 +18,21 @@ interface TranscriptEntry {
  * Receive on this phone.
  *
  * The other half of the same-WiFi ASL relay (see `asl-relay-rn`): this phone — typically the
- * hearing person's — advertises itself on the local network, speaks aloud whatever Call Someone
- * or Talk Aloud sends it from the signer's phone, and can talk back — transcribed locally
- * (`LocalWhisperTranscriber`, same on-device Whisper used elsewhere in the app) and relayed back
- * over the same connection, where it shows up as a caption over the signer's camera view.
+ * hearing person's — advertises itself on the local network, speaks aloud whatever the signer's
+ * phone sends it from a call, and can talk back — transcribed locally (`LocalWhisperTranscriber`,
+ * same on-device Whisper used elsewhere in the app) and relayed back over the same connection,
+ * where it shows up as a caption over the signer's camera view.
  *
  * The mic works the way a real phone call's does: it's just always listening for as long as
- * you're on this screen, not something you press to talk into — the same reason Call Someone's
- * camera is always live rather than needing a "start signing" button. Mute silences BOTH
- * directions at once, same as stepping away from a real call: your mic stops listening and
- * incoming messages stop being spoken aloud (still logged either way, so nothing's lost).
+ * you're on this screen, not something you press to talk into — the same reason Call's camera is
+ * always live rather than needing a "start signing" button. Mute silences BOTH directions at
+ * once, same as stepping away from a real call: your mic stops listening and incoming messages
+ * stop being spoken aloud (still logged either way, so nothing's lost).
  *
  * Styled as a call screen rather than a plain message list: for the hearing person holding this
  * phone, this IS the call — there's just no live audio stream, only text passing each way. Same
- * dark full-bleed chrome, call bar, and bottom controls as Call Someone, so it reads as "on a
- * call" rather than "watching a feed".
+ * dark full-bleed chrome, call bar, and bottom controls as Call, so it reads as "on a call"
+ * rather than "watching a feed".
  */
 export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
   const theme = useTheme();
@@ -49,7 +49,7 @@ export function ReceiveScreen({ navigation }: ScreenProps<'Receive'>) {
     (text: string) => {
       setTranscript((prev) => [{ text, from: 'signer' as const }, ...prev].slice(0, 20));
       // Still logged to the transcript above either way — muting only silences the
-      // speaker, the same way Call Someone's mute never stops signs from being recognized.
+      // speaker, the same way Call's mute never stops signs from being recognized.
       if (muted) return;
       speaker.speak(text, setSpeakingState);
     },

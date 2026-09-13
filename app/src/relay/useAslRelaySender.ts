@@ -12,11 +12,10 @@ export type SenderRelayStatus = SenderState & {
  * it's a no-op until a receiver is actually connected — so callers don't need to branch on
  * connection state just to speak a confirmed sentence.
  *
- * `onMessage` is optional: the same connection is full-duplex, so a receiver phone can talk
- * back (e.g. a spoken reply transcribed locally on their end) — pass a callback to receive
- * those, or omit it entirely for a caller (Talk Aloud) with no call partner to reply to.
+ * The same connection is full-duplex, so a receiver phone can talk back too (e.g. a spoken
+ * reply transcribed locally on their end) — `onMessage` receives those.
  */
-export function useAslRelaySender(onMessage?: (text: string) => void): SenderRelayStatus {
+export function useAslRelaySender(onMessage: (text: string) => void): SenderRelayStatus {
   const sender = useRef<AslRelaySender | null>(null);
   const [state, setState] = useState<SenderState>({ status: 'scanning', peerName: null });
   const [available, setAvailable] = useState(false);
@@ -27,7 +26,7 @@ export function useAslRelaySender(onMessage?: (text: string) => void): SenderRel
     const instance = new AslRelaySender();
     sender.current = instance;
     setAvailable(instance.isAvailable());
-    instance.start(setState, (text) => onMessageRef.current?.(text));
+    instance.start(setState, (text) => onMessageRef.current(text));
 
     return () => {
       instance.stop();
