@@ -75,4 +75,30 @@ describe('LocalWhisperTranscriber', () => {
     expect(mockInitWhisper).toHaveBeenCalledTimes(1);
     await transcriber.stop();
   });
+
+  it('tears down the transcriber a start() creates even when stop() is called before it finishes', async () => {
+    const context = { release: jest.fn().mockResolvedValue(undefined), transcribeData: jest.fn() };
+    let resolveInit: (value: typeof context) => void = () => undefined;
+    mockInitWhisper.mockReturnValue(new Promise<typeof context>((resolve) => { resolveInit = resolve; }));
+    mockAudioAdapter.mockImplementation(() => ({}));
+    const start = jest.fn().mockResolvedValue(undefined);
+    const stop = jest.fn().mockResolvedValue(undefined);
+    const release = jest.fn().mockResolvedValue(undefined);
+    mockRealtimeTranscriber.mockImplementation(() => ({ start, stop, release }));
+
+    const transcriber = new LocalWhisperTranscriber();
+    // start() is still awaiting initWhisper() when stop() is requested — e.g. the user muted (or
+    // navigated away) right after unmuting. Without serializing the two, stop() would run first
+    // (nothing to tear down yet) and start()'s transcriber would finish initializing afterwards
+    // with nobody left to stop it.
+    const startPromise = transcriber.start({ onTranscript: jest.fn() });
+    const stopPromise = transcriber.stop();
+    resolveInit(context);
+    await startPromise;
+    await stopPromise;
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(context.release).toHaveBeenCalledTimes(1);
+  });
 });
