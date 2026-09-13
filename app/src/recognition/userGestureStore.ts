@@ -5,9 +5,9 @@ import type { GestureTemplate, GestureTemplateFile } from './types';
 
 /**
  * Where user-added gestures live on-device. Deliberately separate from the
- * bundled `src/assets/custom_gestures.json` — that file is compiled into
- * the app bundle by Metro and is read-only at runtime, so anything the app
- * records itself has to go to app-private, runtime-writable storage.
+ * bundled `src/assets/delivery.json` — that file is compiled into the app
+ * bundle by Metro and is read-only at runtime, so anything the app records
+ * itself has to go to app-private, runtime-writable storage.
  */
 export const USER_GESTURES_PATH = `${RNFS.DocumentDirectoryPath}/user_added_custom_gestures.json`;
 const TEMP_PATH = `${USER_GESTURES_PATH}.tmp`;
