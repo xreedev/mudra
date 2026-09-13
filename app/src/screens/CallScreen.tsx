@@ -59,7 +59,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // screen — is reachable here too, via "Just practice" on the contact picker below, rather
   // than requiring a real contact just to see a sentence resolve.
   const [practiceMode, setPracticeMode] = useState(false);
-  const [muted, setMuted] = useState(false);
   const [facing, setFacing] = useState<'front' | 'back'>('front');
   // Candidate readings for the current sign sequence: every sentence
   // remembered for this exact sequence leads (most-recently-picked first —
@@ -513,14 +512,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
             </View>
 
             <View style={[styles.controls, { gap: theme.spacing['2xl'] }]}>
-              <IconButton
-                name={muted ? 'mic-off' : 'mic'}
-                accessibilityLabel={muted ? 'Unmute' : 'Mute'}
-                selected={muted}
-                variant={muted ? 'accent' : 'translucent'}
-                size={52}
-                onPress={() => setMuted(!muted)}
-              />
               <IconButton
                 name="close"
                 accessibilityLabel="End call"
