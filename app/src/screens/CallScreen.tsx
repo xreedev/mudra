@@ -420,8 +420,8 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                 },
               ]}
             >
-              <Icon name="mic" size={14} color="#FFFFFF" />
-              <Text variant="body" style={[styles.onDark, styles.captionText]}>
+              <Icon name="mic" size={16} color="#FFFFFF" />
+              <Text variant="heading" style={[styles.onDark, styles.captionText]}>
                 {caption}
               </Text>
             </View>
