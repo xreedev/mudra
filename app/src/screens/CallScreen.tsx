@@ -13,7 +13,7 @@ import {
   SignGuideCircle,
   Text,
 } from '../components';
-import { DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
+import { CONNECT_INTRO_MESSAGE, DEMO_DRAFT, SEED_CONTACTS } from '../data/mock';
 import {
   getRememberedSentences,
   isSameSentence,
@@ -111,20 +111,36 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // to be within earshot.
   const relay = useAslRelaySender(handleRelayMessage);
   const [speakingState, setSpeakingState] = useState<SpeakingState>('idle');
-  // Which exact sentence is currently playing — lets each candidate in "WHO'S SPEAKING? PICK
-  // ONE" below show its own stop icon rather than only the main draft knowing it's speaking.
-  const [spoken, setSpoken] = useState<string | null>(null);
   const speaker = useRef(new LocalSpeaker()).current;
   useEffect(() => () => speaker.stop(), [speaker]);
 
+  // The moment a receiver phone connects, it's told once that what follows is sign-converted
+  // speech rather than a real voice — never shown as the on-screen draft, it only goes out over
+  // the relay. Re-fires on a reconnect (not just once per screen visit) so a dropped-and-resumed
+  // connection still gets the announcement.
+  const introSentRef = useRef(false);
+  useEffect(() => {
+    if (relay.status !== 'connected') {
+      introSentRef.current = false;
+      return;
+    }
+    if (introSentRef.current) return;
+    introSentRef.current = true;
+    relay.sendText(CONNECT_INTRO_MESSAGE);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [relay.status]);
+
+  // A connected receiver already speaks whatever it's sent (see ReceiveScreen) — playing it out
+  // loud here too would just echo the same sentence twice. Local TTS only kicks in when there's
+  // no one to relay to (Just practice, or still scanning for a receiver).
   const speak = useCallback(
     (text: string) => {
       if (!text.trim()) return;
-      speaker.speak(text, (state) => {
-        setSpeakingState(state);
-        setSpoken(state === 'idle' ? null : text);
-      });
-      relay.sendText(text);
+      if (relay.status === 'connected') {
+        relay.sendText(text);
+      } else {
+        speaker.speak(text, setSpeakingState);
+      }
     },
     [speaker, relay],
   );
@@ -162,22 +178,12 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
   // "Confirm & speak" is the confirmation gate (see the screen doc comment) — so that tap is
   // also the moment the pick is remembered for this exact sign sequence, the moment it's relayed
   // to a connected receiver phone, and the moment the recognized-signs panel closes for the next
-  // one. speakOption below (the per-candidate preview icon) does the same three things directly
-  // for one specific candidate, bypassing the need to select it as the draft first.
+  // one.
   const confirmAndSpeak = useCallback(() => {
     speak(draft);
     rememberSentenceChoice(recognized, draft).catch(() => undefined);
     resetRecognition();
   }, [speak, recognized, draft, resetRecognition]);
-
-  const speakOption = useCallback(
-    (option: string) => {
-      speak(option);
-      rememberSentenceChoice(recognized, option).catch(() => undefined);
-      resetRecognition();
-    },
-    [speak, recognized, resetRecognition],
-  );
 
   // The one place a sign sequence's remembered sentences + LLM options are
   // looked up and merged — called both when a new sign completes (below)
@@ -488,10 +494,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                   {draftOptions.map((option, index) => {
                     const selected = option === draft;
                     const fromMemory = rememberedSentences.some((r) => isSameSentence(option, r));
-                    // Speaking a specific candidate directly, distinct from the row tap below
-                    // (which only selects), so previewing one never bypasses "Confirm & speak"
-                    // for the one you actually meant to send.
-                    const speakingThis = speakingState === 'speaking' && spoken === option;
                     return (
                       <Pressable
                         key={`${option}-${index}`}
@@ -540,13 +542,6 @@ export function CallScreen({ navigation }: ScreenProps<'Call'>) {
                             </View>
                           ) : null}
                         </View>
-                        <IconButton
-                          name={speakingThis ? 'stop' : 'volume'}
-                          accessibilityLabel={speakingThis ? 'Stop' : `Speak: ${option}`}
-                          variant={speakingThis ? 'accent' : 'translucent'}
-                          size={36}
-                          onPress={() => (speakingThis ? speaker.stop() : speakOption(option))}
-                        />
                       </Pressable>
                     );
                   })}

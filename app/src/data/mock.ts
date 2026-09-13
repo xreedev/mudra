@@ -18,7 +18,14 @@ export const SEED_SIGNS: CustomSign[] = [
   { id: '3', label: 'AMBULANCE', samples: 30 },
 ];
 
-export const DEMO_DRAFT = 'Hi, I am Safar';
+/** The draft box starts empty until the user actually signs something — there's nothing to
+ *  preview before that. */
+export const DEMO_DRAFT = '';
+
+/** Sent once, automatically, the moment a receiver phone connects — so whoever picks up knows
+ *  right away that what follows is sign-converted speech rather than a real voice. Never shown
+ *  as the on-screen draft; it only ever goes out over the relay. */
+export const CONNECT_INTRO_MESSAGE = 'This is sign-converted language. I am differently abled.';
 
 export interface Contact {
   id: string;
@@ -28,7 +35,7 @@ export interface Contact {
 }
 
 export const SEED_CONTACTS: Contact[] = [
-  { id: '1', name: 'Apollo Pharmacy', detail: 'Nearby · saved' },
-  { id: '2', name: 'Dr. Meera Raghavan', detail: 'Clinic' },
+  { id: '1', name: 'Delivery 1', detail: 'Apollo Pharmacy' },
+  { id: '2', name: 'Delivery 2', detail: 'Dr. Meera Raghavan' },
   { id: '3', name: 'Emergency services', detail: '108', emergency: true },
 ];
