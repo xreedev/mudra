@@ -111,8 +111,11 @@ export interface LocalLlm {
    *  glosses are genuinely ambiguous about who is signing (customer vs.
    *  driver) — see GLOSS_TO_TEXT_OPTIONS_SYSTEM in prompts.ts. The UI shows
    *  all of them and the user picks the one matching their actual
-   *  situation, rather than the LLM silently guessing which role applies. */
-  composeSentenceOptions: (gloss: string[]) => Promise<string[]>;
+   *  situation, rather than the LLM silently guessing which role applies.
+   *  `context` is the current call's recent turn history (see
+   *  `buildRecentContext`) — optional, but passing it lets the LLM use what
+   *  was already said to judge who's more likely signing now. */
+  composeSentenceOptions: (gloss: string[], context?: string) => Promise<string[]>;
 }
 
 /** Reactive status for a component (CallScreen) to render — piggybacks on
@@ -137,6 +140,7 @@ export function useLocalLlm(): LocalLlm {
     status,
     detail,
     composeSentence: (gloss: string[]) => glossToText(localProvider, gloss),
-    composeSentenceOptions: (gloss: string[]) => glossToTextOptions(localProvider, gloss),
+    composeSentenceOptions: (gloss: string[], context?: string) =>
+      glossToTextOptions(localProvider, gloss, context),
   };
 }

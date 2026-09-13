@@ -50,9 +50,17 @@ export async function glossToText(llm: LlmProvider, gloss: string[]): Promise<st
  * specifically to encourage the options to genuinely diverge rather than be
  * near-identical rewordings; falls back to parseReplies' same tolerant
  * JSON-array recovery already proven on-device for smartReplies.
+ *
+ * @param context Recent turns of this call (see `buildRecentContext`) — passed straight through
+ *  to the prompt so the LLM can use what's already been said to judge which reading is more
+ *  likely, instead of guessing cold on the glosses alone every time.
  */
-export async function glossToTextOptions(llm: LlmProvider, gloss: string[]): Promise<string[]> {
-  const raw = await llm.complete(glossOptionsSystemWithFewShot(), buildGlossUserPrompt(gloss), {
+export async function glossToTextOptions(
+  llm: LlmProvider,
+  gloss: string[],
+  context?: string,
+): Promise<string[]> {
+  const raw = await llm.complete(glossOptionsSystemWithFewShot(), buildGlossUserPrompt(gloss, context), {
     maxTokens: 150,
     temperature: 0.6,
   });
