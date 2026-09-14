@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MUDRA+ — on-device ASL to speech</title>
-<meta name="description" content="MUDRA+ lets Deaf and hard-of-hearing users make phone calls independently. Hand tracking, sentence generation and translation memory all run on the phone. Built for iQOO City Battles, Chennai.">
+<title>MUDRA+ — on-device ASL input accelerator</title>
+<meta name="description" content="MUDRA+ is a prototype on-device ASL input accelerator: a small, high-accuracy sign vocabulary plus autocomplete, so a sentence costs a few signs instead of a whole sentence of them. Built at iQOO City Battles, Chennai.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='23' fill='%230D9488'/><rect x='22' y='26' width='56' height='40' rx='11' fill='white'/><path d='M34 63 L50 63 L36 79 Z' fill='white'/><circle cx='40' cy='46' r='4' fill='%230D9488'/><circle cx='51' cy='46' r='5' fill='%230D9488'/><circle cx='63' cy='46' r='6' fill='%230D9488'/></svg>">
 <style>
 :root{
@@ -123,183 +123,154 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
 </style>
 </head>
 <body>
-
 <nav>
   <div class="wrap">
     <a class="brand" href="#top"><span class="dot"></span>MUDRA+</a>
-    <a class="link" href="#problem">Problem</a>
-    <a class="link" href="#idea">Core idea</a>
+    <a class="link" href="#scope">Scope</a>
+    <a class="link" href="#why">Why autocomplete</a>
     <a class="link" href="#pipeline">Pipeline</a>
+    <a class="link" href="#memory">Memory</a>
     <a class="link" href="#models">Models</a>
-    <a class="link" href="#tech">Technical</a>
-    <a class="link" href="#snapdragon">Snapdragon</a>
+    <a class="link" href="#device">On device</a>
     <a class="link" href="#status">Status</a>
   </div>
 </nav>
 
 <header id="top">
   <div class="wrap">
-    <span class="eyebrow">iQOO City Battles · Chennai</span>
-    <h1>Say it your way — without handing your phone to someone else.</h1>
+    <span class="eyebrow">Demo · iQOO City Battles, Chennai</span>
+    <h1>Fewer signs per sentence.</h1>
     <p class="lede">
-      MUDRA+ lets Deaf and hard-of-hearing users make and take phone calls on their own.
-      Sign into the camera, confirm the sentence, and the phone speaks it into the call.
-      Hand tracking, sentence generation, transcription and memory all run <strong>on the
-      device</strong> — no server, no API key, no account.
+      MUDRA+ is a prototype on-device ASL <strong>input accelerator</strong>: a small,
+      high-accuracy sign vocabulary plus autocomplete, so a short spoken sentence costs a few
+      signs instead of a whole sentence of them. Hand tracking, sentence composition,
+      transcription and memory all run on the phone — no server, no API key, no account.
     </p>
 
     <div class="flow">
-      <span>camera</span>→<span>hand landmarks</span>→<span>gloss tokens</span>→
-      <span class="hl">memory hit · ~1 µs</span>or<span>local 3B LLM</span>→
-      <span>you confirm</span>→<span>speech</span>
+      <span>2–3 signs</span>→<span class="hl">memory · ~1 µs</span>or<span>local 3B LLM</span>→
+      <span>candidate sentences</span>→<span>you pick one</span>→<span>spoken</span>
     </div>
 
     <div class="meta">
-      <span class="chip">Runs offline · airplane mode</span>
+      <span class="chip">Runs offline</span>
       <span class="chip">iQOO 15 · Snapdragon 8 Elite Gen 5</span>
-      <span class="chip">React Native + Kotlin + llama.cpp</span>
-      <span class="chip">No cloud inference</span>
+      <span class="chip">MediaPipe landmarks, no trained classifier</span>
+      <span class="chip">Completed at the hackathon</span>
     </div>
   </div>
 </header>
 
-<section id="problem">
+<section id="scope">
   <div class="wrap">
-    <h2>The pain point</h2>
-    <p class="sub">A Deaf person cannot independently do the most mundane thing in adult life:
-      make a phone call.</p>
+    <h2>What this is, and what it isn't</h2>
+    <p class="sub">The scope is deliberately narrow, and worth stating before any of the
+      engineering.</p>
 
-    <div class="grid g3">
-      <div class="card">
-        <span class="n">01</span>
-        <h3>The pharmacy only takes phone orders</h3>
-        <p>The clinic "will call you back". The delivery driver is outside, calling. Everyday
-          logistics assume a voice on the line.</p>
-      </div>
-      <div class="card">
-        <span class="n">02</span>
-        <h3>Relay services cost independence</h3>
-        <p>Scheduling, a third human on the line, and telling a stranger your prescription and
-          your address. Privacy traded for access.</p>
-      </div>
-      <div class="card">
-        <span class="n">03</span>
-        <h3>In an emergency it isn't an inconvenience</h3>
-        <p>At 2 a.m., with no signal and no interpreter, the gap between signing and speech is the
-          gap between getting an ambulance and not.</p>
-      </div>
-    </div>
-
-    <h3>Why existing sign-language tech doesn't close it</h3>
-    <div class="tw">
-      <table>
-        <thead><tr><th>What's out there</th><th>Why it fails the call</th></tr></thead>
-        <tbody>
-          <tr><td>Cloud sign-recognition APIs</td><td>Round-trip latency inside a live call — and your medical speech on somebody's server</td></tr>
-          <tr><td>Word-level models (WLASL, ~2 000 signs)</td><td>Accuracy collapses on a real phone in real lighting, and the words you actually need — <em>Metformin</em>, your street name — aren't in the vocabulary</td></tr>
-          <tr><td>Fingerspelling keyboards</td><td>Correct, but far too slow to hold a conversation</td></tr>
-          <tr><td>Text-to-speech apps</td><td>Assume you can already type the sentence, which is not how a signer communicates</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<section id="idea">
-  <div class="wrap">
-    <h2>The core idea: lean on the detection model as little as possible</h2>
-    <p class="sub">
-      Most systems ask one big model to recognise a huge vocabulary <em>and</em> produce fluent
-      English. That model becomes the single point of failure, needs retraining to learn anything
-      new, and is exactly what breaks on a handheld camera. MUDRA+ inverts it — recognition is the
-      smallest, dumbest part of the system.
-    </p>
-
-    <div class="tw">
-      <table>
-        <thead><tr><th>Layer</th><th>Traditional approach</th><th>MUDRA+</th></tr></thead>
-        <tbody>
-          <tr>
-            <td><strong>Seeing the sign</strong></td>
-            <td>A trained classifier that must be right about thousands of classes</td>
-            <td>MediaPipe landmarks → 72 features → <strong>geometric template match</strong>. No neural classifier in the live path.</td>
-          </tr>
-          <tr>
-            <td><strong>Learning a new sign</strong></td>
-            <td>Collect data, retrain, re-export, ship an app update</td>
-            <td><strong>Hold the sign for one second.</strong> It works on the next frame.</td>
-          </tr>
-          <tr>
-            <td><strong>Making a sentence</strong></td>
-            <td>Same vision model expected to output English</td>
-            <td>A local <strong>Qwen2.5-3B</strong> composes it from glosses — a language task done by a language model</td>
-          </tr>
-          <tr>
-            <td><strong>Saying it again</strong></td>
-            <td>Full inference, every single time</td>
-            <td><strong>Memory returns it in ~1 µs.</strong> No model runs at all.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div class="grid g3">
-      <div class="card">
-        <span class="n">MOVE 1</span>
-        <h3>Geometry, not inference</h3>
-        <p>21 hand landmarks, normalised around the wrist, expanded to a 72-dimension vector and
-          ranked by RMS Euclidean distance. A classifier's output layer is hard-wired to its
-          training vocabulary — this isn't, so users add their own signs at runtime.</p>
-      </div>
-      <div class="card">
-        <span class="n">MOVE 2</span>
-        <h3>The LLM does the language</h3>
-        <p><code>ME NEED METFORMIN ONE STRIP</code> has no articles, tense or politeness.
-          Recognition only has to answer "which sign is this?" — a far easier question — so
-          <strong>accuracy requirements drop dramatically</strong>. That's why a tiny vocabulary
-          can drive a real conversation.</p>
-      </div>
-      <div class="card">
-        <span class="n">MOVE 3</span>
-        <h3>Memory removes the model</h3>
-        <p>People repeat themselves: same medicine, same pharmacy, every month. Once
-          <code>ME|TEA|HOT</code> is confirmed, it never needs a model again. The app gets
-          <strong>faster the more you use it</strong> — the opposite of how ML products usually
-          age.</p>
-      </div>
-    </div>
-
-    <div class="note">
-      <p><strong>The safety net across all three:</strong> nothing is ever spoken until you
-        confirm it. The LLM's output is a candidate, not an action — which makes the confirmation
-        gate the hallucination guard and the misrecognition guard at the same time. For emergency
-        phrases the model only <em>structures</em> the message; the number and address come from
-        validated fields, never invented.</p>
-    </div>
-  </div>
-</section>
-
-<section id="productivity">
-  <div class="wrap">
-    <h2>A productivity tool, not a demo</h2>
-    <p class="sub">MUDRA+ isn't a translator you marvel at once. It's autofill for your own voice.</p>
     <div class="grid g2">
-      <div class="card"><h3>Your phrases, not a phrasebook</h3><p>The memory holds what <em>you</em> confirmed, in your wording — not a vendor's canned list.</p></div>
-      <div class="card"><h3>It compounds</h3><p>First pharmacy call: sign, wait, confirm. Fifth: it's already filled in. The slow path is a one-time cost per phrase.</p></div>
-      <div class="card"><h3>Pin what matters</h3><p>Emergency phrases are pinned so eviction can never reclaim them. There instantly, offline, at 2 a.m.</p></div>
-      <div class="card"><h3>Your own vocabulary</h3><p>Add <code>METFORMIN</code>, your landlord's name, your street — signs no public dataset will ever contain.</p></div>
+      <div class="card">
+        <h3>Autocomplete, not translation</h3>
+        <p>The system has no opinion about grammar it hasn't been shown. It proposes candidate
+          sentences for a signer's own recurring phrases; the person chooses one, every time,
+          before anything is spoken.</p>
+      </div>
+      <div class="card">
+        <h3>Interpretation is a human skill</h3>
+        <p>This doesn't attempt it. The design assumes a person driving a tool for their own
+          words, with a confirmation step they control — not a machine speaking on anyone's
+          behalf.</p>
+      </div>
+      <div class="card">
+        <h3>A small vocabulary, on purpose</h3>
+        <p>Five bundled single-hand static poses, plus whatever the user records. The interesting
+          question isn't vocabulary size — it's how far a <em>reliable</em> vocabulary gets you
+          when autocomplete carries the rest.</p>
+      </div>
+      <div class="card">
+        <h3>A prototype, measured as one</h3>
+        <p>Every figure on this page is an engineering benchmark. The ergonomics — hold duration,
+          the capture gate, whether the candidate sentences are worth choosing between — are the
+          next thing to evaluate, with signers.</p>
+      </div>
     </div>
+  </div>
+</section>
+
+<section id="why">
+  <div class="wrap">
+    <h2>Why autocomplete, and why a small model</h2>
+    <p class="sub">Signing a full English sentence is expensive twice over: physically, and
+      statistically.</p>
+
+    <p>If per-sign recognition accuracy is <code>p</code>, the chance an <code>n</code>-sign
+      sentence survives end to end is roughly <code>p<sup>n</sup></code>. The exponent is the
+      problem:</p>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Signs needed</th><th>p = 0.95</th><th>p = 0.90</th></tr></thead>
+        <tbody>
+          <tr><td>8 — full sentence</td><td>0.66</td><td>0.43</td></tr>
+          <tr><td>5</td><td>0.77</td><td>0.59</td></tr>
+          <tr><td><strong>3 — gloss key + autocomplete</strong></td><td><strong>0.86</strong></td><td><strong>0.73</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="color:var(--muted);font-size:14px;margin-top:-6px">A model of the failure mode, not
+      a measurement — but it is why the architecture is shaped this way.</p>
+
+    <div class="grid g2">
+      <div class="card">
+        <span class="n">LEVER 1</span>
+        <h3>Reduce n</h3>
+        <p>Don't sign the sentence — sign the key. <code>ME NEED METFORMIN</code> is enough to
+          retrieve or generate the full phrasing, so the recognised sequence stays short.</p>
+      </div>
+      <div class="card">
+        <span class="n">LEVER 2</span>
+        <h3>Raise p</h3>
+        <p>A small set of distinct, well-separated poses is far easier to get right than a large
+          one full of near-collisions — and a rejection threshold means the system answers
+          <code>UNKNOWN</code> rather than guessing.</p>
+      </div>
+    </div>
+
+    <h3>Why there's no trained classifier in the live path</h3>
+    <p>A classifier's output layer is fixed to the vocabulary it was trained on. Adding one sign
+      means collecting data, retraining, re-exporting and shipping a new model — incompatible with
+      the thing this demo most wants to test: <strong>a user adding their own sign in a second and
+      using it on the next frame.</strong> So detection for the demo is geometric:</p>
+
+<pre><code>21 MediaPipe landmarks
+   → normalise around the wrist        (translation- and scale-invariant)
+   → 72-dimension feature vector
+   → RMS Euclidean distance to every template
+   → nearest match, or UNKNOWN above τ = 0.42</code></pre>
+
+    <p><code>sign-embeddings/</code> implements the fallback — reuse an internal layer of a
+      trained TFLite model as an embedding extractor, match by cosine similarity — for when
+      template matching runs out of headroom. Built and tested, not wired in, because the demo
+      doesn't need it.</p>
+
+    <h3>Why the LLM is small and rarely called</h3>
+    <p>Glosses aren't English: no articles, no tense, no register. That's a language task, so a
+      language model does it rather than the vision path. But the LLM is the slowest and hottest
+      component, so the architecture minimises <em>how often</em> it runs — an exact sequence
+      already confirmed returns from memory in about a microsecond, a sequence whose candidates
+      the user has chosen from before returns from sentence memory, and only a genuinely new
+      sequence reaches the 3B. That ordering is also what keeps the demo interactive under
+      sustained camera load.</p>
   </div>
 </section>
 
 <section id="pipeline">
   <div class="wrap">
-    <h2>How it runs</h2>
-    <p class="sub">Every box below executes on the phone. The only network traffic the app can
-      make is a LAN socket to a second phone you pair with yourself.</p>
+    <h2>The pipeline</h2>
+    <p class="sub">Every box runs on the phone. The only network traffic possible is a LAN socket
+      to a second phone you pair yourself.</p>
 
     <figure>
-      <svg viewBox="0 0 860 470" role="img" aria-label="MUDRA+ on-device pipeline: camera to hand landmarks to gloss tokens, then either a memory hit or the local LLM, through the confirmation gate to speech.">
+      <svg viewBox="0 0 860 470" role="img" aria-label="Pipeline: camera to MediaPipe hand landmarks to capture gate to template matcher to gloss sequence, then either a memory hit or the local LLM, through the confirmation gate to speech.">
         <defs>
           <marker id="a" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
             <path d="M0 1 L8 4.5 L0 8 z" fill="var(--muted)"/>
@@ -309,7 +280,6 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
           </marker>
         </defs>
         <g font-family="var(--sans)" font-size="13">
-          <!-- column 1 -->
           <g>
             <rect x="14" y="20" width="212" height="52" rx="11" fill="var(--surface)" stroke="var(--border)"/>
             <text x="30" y="42" fill="var(--text)" font-weight="600">Camera</text>
@@ -337,10 +307,9 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
             <path d="M120 330 V356" stroke="var(--muted)" fill="none" marker-end="url(#a)"/>
           </g>
 
-          <!-- column 2 -->
           <g>
             <rect x="300" y="98" width="248" height="76" rx="11" fill="var(--accent-soft)" stroke="var(--accent)"/>
-            <text x="318" y="124" fill="var(--accent-ink)" font-weight="700">Translation memory</text>
+            <text x="318" y="124" fill="var(--accent-ink)" font-weight="700">Memory</text>
             <text x="318" y="143" fill="var(--accent-ink)" font-size="11.5">exact hit · O(1) · ~1 µs</text>
             <text x="318" y="160" fill="var(--accent-ink)" font-size="11.5">no model runs</text>
 
@@ -350,23 +319,22 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
             <text x="318" y="274" fill="var(--muted)" font-size="11.5">2–3 candidate sentences</text>
 
             <rect x="300" y="330" width="248" height="86" rx="11" fill="var(--raised)" stroke="var(--text)" stroke-width="1.6"/>
-            <text x="318" y="357" fill="var(--text)" font-weight="700">Confirmation gate</text>
+            <text x="318" y="357" fill="var(--text)" font-weight="700">You pick one</text>
             <text x="318" y="376" fill="var(--muted)" font-size="11.5">pick · edit · discard</text>
             <text x="318" y="394" fill="var(--muted)" font-size="11.5">nothing is spoken before this</text>
 
             <path d="M226 380 C 260 380, 262 150, 300 140" stroke="var(--accent)" fill="none" marker-end="url(#ag)"/>
             <text x="238" y="120" fill="var(--accent)" font-size="11" font-weight="700">hit</text>
             <path d="M226 386 C 262 386, 266 262, 300 252" stroke="var(--muted)" fill="none" marker-end="url(#a)"/>
-            <text x="238" y="300" fill="var(--muted)" font-size="11">miss</text>
+            <text x="238" y="300" fill="var(--muted)" font-size="11">new</text>
             <path d="M424 174 V212" stroke="var(--muted)" fill="none" stroke-dasharray="4 4"/>
             <path d="M424 288 V330" stroke="var(--muted)" fill="none" marker-end="url(#a)"/>
           </g>
 
-          <!-- column 3 -->
           <g>
             <rect x="622" y="330" width="224" height="60" rx="11" fill="var(--surface)" stroke="var(--border)"/>
-            <text x="640" y="354" fill="var(--text)" font-weight="600">TTS → the call</text>
-            <text x="640" y="372" fill="var(--muted)" font-size="11.5">speaker · or LAN relay</text>
+            <text x="640" y="354" fill="var(--text)" font-weight="600">TTS → speaker</text>
+            <text x="640" y="372" fill="var(--muted)" font-size="11.5">or LAN relay to a peer phone</text>
 
             <rect x="622" y="98" width="224" height="76" rx="11" fill="var(--surface)" stroke="var(--border)"/>
             <text x="640" y="124" fill="var(--text)" font-weight="600">whisper.rn · ggml-tiny</text>
@@ -375,7 +343,7 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
 
             <rect x="622" y="212" width="224" height="76" rx="11" fill="var(--accent-soft)" stroke="var(--accent)"/>
             <text x="640" y="238" fill="var(--accent-ink)" font-weight="700">Remembered</text>
-            <text x="640" y="257" fill="var(--accent-ink)" font-size="11.5">confirmed pair stored</text>
+            <text x="640" y="257" fill="var(--accent-ink)" font-size="11.5">gloss sequence → sentence</text>
             <text x="640" y="274" fill="var(--accent-ink)" font-size="11.5">next time: no model</text>
 
             <path d="M548 373 H622" stroke="var(--muted)" fill="none" marker-end="url(#a)"/>
@@ -383,29 +351,98 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
           </g>
         </g>
       </svg>
-      <figcaption>The whole live path. A repeated phrase takes the teal route and never touches the LLM.</figcaption>
+      <figcaption>A repeated phrase takes the teal route and never reaches the LLM.</figcaption>
     </figure>
 
-    <h3>Getting the voice into the call</h3>
-    <p>Android gives third-party apps <strong>no public API to inject audio into a cellular
-      call</strong>. This is the hardest constraint in the product, so two routes are built rather
-      than one:</p>
+    <h3>Recognition details</h3>
     <ul>
-      <li><strong>Acoustic coupling</strong> — put the call on speakerphone and let the phone's own
-        microphone, already open for the call, pick up the TTS output. Works on any carrier call
-        with no server. Cost: audio quality, and echo cancellation can fight it.</li>
-      <li><strong>Local relay</strong> — two phones discover each other over zeroconf/mDNS and hold
-        a TCP socket. The signer's phone sends text; the receiving phone speaks it and streams a
-        transcript back. No cloud telephony, no per-minute bill, no third party listening.</li>
+      <li><strong>Features.</strong> Landmarks normalised around the wrist, then expanded to 72
+        dimensions with the same transform the snapshot trainer used — so bundled and user-recorded
+        templates are directly comparable.</li>
+      <li><strong>Capture gate.</strong> Landmark shape (<code>no-hand</code>), hand-to-camera
+        distance (<code>too-far</code>), steadiness across the hold window
+        (<code>unstable</code>) — surfaced as "Move your hand closer", "Hold your hand steady",
+        rather than silently storing a bad template.</li>
+      <li><strong>Hold-to-confirm.</strong> A ring fills over ~1 s, with a cooldown that forces the
+        hand to visibly re-form before the same gloss can fire again. On a call, a detection zone
+        restricts matching to a hand held at sign height.</li>
+      <li><strong>User templates.</strong> App-private JSON, atomic temp-file-then-swap writes, a
+        pub-sub so other mounted screens reload live, and a serialised save queue so concurrent
+        captures can't corrupt the store.</li>
+      <li><strong>Demo limits.</strong> Single hand, static poses, one sign per hold. Two-handed
+        and motion signs are not implemented.</li>
     </ul>
+
+    <h3>Getting audio into a call</h3>
+    <p>Android exposes <strong>no public API for injecting audio into a cellular call</strong>,
+      which constrains the whole output stage. Two routes are implemented:</p>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Route</th><th>How</th><th>Trade-off</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Acoustic coupling</strong></td><td>Speakerphone; the call's own open mic picks up the TTS output</td><td>Works on any carrier call with no infrastructure; lower quality, and handset echo cancellation can suppress it</td></tr>
+          <tr><td><strong>LAN relay</strong></td><td>zeroconf/mDNS discovery + TCP socket; sender transmits text, receiver speaks it and streams a transcript back</td><td>Clean audio, no cloud telephony; both phones must share a network</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section id="memory">
+  <div class="wrap">
+    <h2>The autocomplete stores</h2>
+    <p class="sub">Two stores, different jobs — one keyed on the gloss sequence, one on what the
+      user actually picked.</p>
+
+    <h3>Translation memory</h3>
+    <p>The same engine implemented twice: Kotlin (Room/SQLite) and TypeScript (any SQLite binding
+      via a six-line adapter). Standalone, dependency-free, independently tested.</p>
+
+    <div class="stats">
+      <div class="stat"><b>~1 µs</b><span>exact lookup, Kotlin</span></div>
+      <div class="stat"><b>~2.1 µs</b><span>exact lookup, TypeScript</span></div>
+      <div class="stat"><b>flat</b><span>1 k → 50 k memories</span></div>
+      <div class="stat"><b>46</b><span>tests across both ports</span></div>
+    </div>
+
+    <ul style="margin-top:22px">
+      <li><strong>Exact path — O(1).</strong> Kotlin hashes the token characters in place (FNV-1a,
+        no joined key string, zero allocation) into an open-addressing table; collisions resolve by
+        <em>verifying tokens</em>, never by trusting the hash.</li>
+      <li><strong>Fuzzy path — two stages.</strong> An inverted-index walk accumulates IDF-weighted
+        overlap into a reused, generation-stamped <code>Float64Array</code>; tokens in &gt;60 % of
+        memories are skipped unless the query has nothing else; unknown glosses get single-edit
+        repair (<code>METFORMIM → METFORMIN</code>). The top 48 candidates are then scored
+        <code>0.45·weightedJaccard + 0.25·queryCoverage + 0.30·lcsRatio</code> — the LCS term makes
+        sign <em>order</em> count. Ties break deterministically.</li>
+      <li><strong>Failure behaviour.</strong> Ids are assigned in RAM, so a confirmed phrase is
+        queryable before SQLite has heard of it. A corrupt or full database flips the layer to
+        memory-only and counts the failure; warm-up skips corrupt rows instead of failing
+        start-up; malformed recogniser output is a returned value, never an exception.</li>
+      <li><strong>Bounded.</strong> 20 000 entries, least-used/least-recent eviction, pinned
+        entries never evicted.</li>
+    </ul>
+
+    <h3>Sentence memory</h3>
+    <p>Records <em>which candidate the user picked</em> per exact gloss sequence and resurfaces it
+      ahead of fresh generation. A sequence can legitimately mean different things on different
+      occasions, so picking a different sentence later <em>adds</em> an option rather than
+      replacing the earlier one. Once a sequence has enough remembered options, the LLM isn't
+      called for it again.</p>
+
+    <div class="note">
+      <p>The practical effect: the slow path is a one-time cost per phrase. Repeat use of the same
+        phrase is a hash lookup, which is also what keeps the phone cool under sustained camera
+        load.</p>
+    </div>
   </div>
 </section>
 
 <section id="models">
   <div class="wrap">
-    <h2>Every model used</h2>
-    <p class="sub">Five artifacts. One is a vision model, one is a language model, one is speech —
-      and the piece doing sign recognition isn't a model at all.</p>
+    <h2>Models</h2>
+    <p class="sub">One vision model, one language model, one speech model — and the component doing
+      sign matching isn't a model at all.</p>
     <div class="tw">
       <table>
         <thead><tr><th>Model</th><th>Artifact</th><th>Runtime</th><th>Role</th></tr></thead>
@@ -413,271 +450,164 @@ footer .wrap{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between}
           <tr>
             <td><strong>MediaPipe Hand Landmarker</strong></td>
             <td><code>hand_landmarker.task</code></td>
-            <td>MediaPipe Tasks, native, GPU-delegated, via a VisionCamera frame processor</td>
-            <td>21 3-D hand landmarks per frame. The only vision model in the live path.</td>
+            <td>MediaPipe Tasks, native, GPU-delegated</td>
+            <td>21 3-D landmarks per frame — the only vision model in the live path</td>
           </tr>
           <tr>
             <td><strong>Qwen2.5-3B-Instruct</strong></td>
             <td><code>qwen2.5-3b-instruct-q4_k_m.gguf</code> · ~2.0 GB</td>
             <td><code>llama.rn</code> (llama.cpp), CPU/GPU</td>
-            <td>Gloss sequence → candidate English sentences; conversation-aware replies</td>
+            <td>Gloss sequence → candidate sentences; contextual replies</td>
           </tr>
           <tr>
             <td><strong>Whisper tiny</strong></td>
             <td><code>ggml-tiny.bin</code> · ~75 MB</td>
             <td><code>whisper.rn</code> (whisper.cpp)</td>
-            <td>On-device speech-to-text for the other party</td>
+            <td>On-device transcription of the other party</td>
           </tr>
           <tr>
             <td><strong>Android TTS</strong></td>
             <td>system voices</td>
             <td><code>react-native-tts</code></td>
-            <td>Speaks the confirmed sentence into the call</td>
+            <td>Speaks the confirmed sentence</td>
           </tr>
           <tr>
             <td><strong>Gesture templates</strong></td>
             <td><code>custom_gestures.json</code> + user file</td>
-            <td>Pure TypeScript — <strong>no model</strong></td>
-            <td>21 landmarks + 72 features per sign, matched by RMS distance. 5 bundled; users add their own at runtime.</td>
+            <td>pure TypeScript — <strong>no model</strong></td>
+            <td>21 landmarks + 72 features per sign; 5 bundled, user-extensible at runtime</td>
           </tr>
           <tr>
             <td>Embedding extractor <span class="pill no">not wired in</span></td>
             <td><code>sign_embed.tflite</code></td>
             <td>TFLite</td>
-            <td>Alternative custom-sign path in <code>sign-embeddings/</code>: reuse an internal layer of a trained classifier as a feature extractor, match by cosine similarity</td>
+            <td>Cosine-similarity custom-sign path in <code>sign-embeddings/</code></td>
           </tr>
         </tbody>
       </table>
     </div>
-    <div class="note">
-      <p><strong>No cloud inference anywhere.</strong> There is no OpenAI, Anthropic or Gemini key
-        in the live app. Model choice per RAM tier (1.5B at 6 GB, 3B at 8 GB, 7B at 12 GB+) is
-        documented in <code>llm-testbed/</code>, the standalone harness used to benchmark GGUFs on
-        the actual phone before integration.</p>
-    </div>
+    <p>No cloud inference: there is no OpenAI, Anthropic or Gemini key in the live app. GGUF choice
+      per RAM tier (1.5B at 6 GB, 3B at 8 GB, 7B at 12 GB+) is documented in
+      <code>llm-testbed/</code>, the harness used to benchmark candidates on the actual device.</p>
   </div>
 </section>
 
-<section id="tech">
+<section id="device">
   <div class="wrap">
-    <h2>Technical notes</h2>
-
-    <h3>Recognition</h3>
-    <ul>
-      <li><strong>Features.</strong> Landmarks are normalised around the wrist — translation- and
-        scale-invariant — then expanded into a 72-dimension vector using the identical transform
-        the snapshot trainer used, so bundled and user-recorded signs are directly comparable.</li>
-      <li><strong>Matching.</strong> Rank templates by RMS Euclidean distance; emit
-        <code>UNKNOWN</code> above threshold <code>0.42</code>. An honest <code>UNKNOWN</code> beats
-        a confident wrong gloss on an emergency call.</li>
-      <li><strong>Capture quality gate.</strong> Hand present, close enough (<code>handSpread</code>),
-        steady (<code>maxJitter</code>) — failures return plain language ("Move your hand closer",
-        "Hold your hand steady") instead of silently storing a bad template.</li>
-      <li><strong>Hold-to-confirm.</strong> A progress ring fills over ~1 s, with a cooldown that
-        forces a sign to visibly re-form, so one held hand can't spam a gloss.</li>
-      <li><strong>Detection zone.</strong> On a call, only a hand held at sign height near the guide
-        ring counts — reaching for the phone isn't a sign.</li>
-      <li><strong>User signs override bundled ones.</strong> Persisted as app-private JSON with
-        atomic temp-file-then-swap writes, a pub-sub so other mounted screens reload live, and a
-        serialised save queue so concurrent captures can't corrupt the store.</li>
-    </ul>
-
-    <h3>Sentence generation</h3>
-    <ul>
-      <li><code>LlmProvider</code> is a one-method interface; <code>LocalLlmProvider</code>
-        implements it over <code>llama.rn</code>. The app ships local-only by design.</li>
-      <li>Prompts request <strong>multiple candidates</strong>, because glosses are genuinely
-        ambiguous — <code>ARRIVED HOME</code> means different things from a customer and a driver.
-        The user picks; the app doesn't guess for them.</li>
-      <li>The call's conversation history is fed back as context, so replies fit what was just
-        said.</li>
-      <li><strong>Sentence memory</strong> records which candidate was picked per exact gloss
-        sequence and resurfaces it ahead of fresh guesses. Picking a different sentence later
-        <em>adds</em> an option rather than replacing it. Once a sequence has enough remembered,
-        the LLM is never called for it again.</li>
-    </ul>
-
-    <h3>Translation memory layer</h3>
-    <p>The same engine implemented twice — Kotlin/Android (Room + SQLite) and TypeScript (any RN
-      SQLite binding via a six-line adapter). Both standalone, dependency-free, independently
-      tested.</p>
-    <div class="stats">
-      <div class="stat"><b>~1 µs</b><span>exact lookup, Kotlin</span></div>
-      <div class="stat"><b>flat</b><span>1 k → 50 k corpus</span></div>
-      <div class="stat"><b>~2.1 µs</b><span>exact lookup, TypeScript</span></div>
-      <div class="stat"><b>46</b><span>tests across both ports</span></div>
-    </div>
-    <ul style="margin-top:22px">
-      <li><strong>Exact hits are O(1).</strong> Kotlin hashes the token characters in place (FNV-1a,
-        no joined key string, zero allocation) into an open-addressing table. Collisions are
-        resolved by <em>verifying tokens</em>, never by trusting the hash.</li>
-      <li><strong>Near hits are cheap.</strong> An IDF-weighted inverted index narrows the corpus to
-        48 candidates, then scores them
-        <code>0.45·weightedJaccard + 0.25·queryCoverage + 0.30·lcsRatio</code>. The LCS term makes
-        sign <em>order</em> count; IDF makes <code>METFORMIN</code> outweigh <code>ME</code>.
-        Unknown glosses get single-edit repair (<code>METFORMIM → METFORMIN</code>).</li>
-      <li><strong>Writes never block a read.</strong> Ids are assigned in RAM, so a confirmed phrase
-        is queryable before SQLite has heard of it; persistence is write-behind.</li>
-      <li><strong>It degrades instead of failing.</strong> A corrupt or full database flips the
-        layer to memory-only, counts the failure and tells the app. Warm-up skips corrupt rows
-        rather than failing start-up. Bad input from a glitching recogniser is a returned value,
-        never an exception.</li>
-      <li><strong>Bounded.</strong> 20 000 memories, then the least-used unpinned entry is evicted.
-        Pinned emergency phrases are never evicted; a fully pinned corpus refuses a write rather
-        than dropping one.</li>
-    </ul>
-
-    <h3>Call and audio</h3>
-    <ul>
-      <li><strong>Outgoing:</strong> confirmed text → <code>react-native-tts</code> → speaker → the
-        call, or → TCP relay → the receiving phone speaks it.</li>
-      <li><strong>Incoming:</strong> mic → PCM stream → <code>whisper.rn</code> → on-screen
-        transcript. The receive mic pauses while the phone is speaking, so the app doesn't
-        transcribe its own voice back into the conversation.</li>
-      <li><strong>Discovery:</strong> zeroconf/mDNS advertise-and-browse, TCP socket for the
-        session, and the UI shows the real socket state rather than a decorative "connected".</li>
-    </ul>
-
-    <h3>The app</h3>
-    <p>React Native 0.76 (bare), TypeScript strict, React Navigation native stack, and a tokenised
-      design system — screens never hard-code a colour or a spacing value, so dark mode follows the
-      system setting for free. Icons are a hand-written 24 px SVG set, not an icon font. Icon-only
-      controls always carry an accessibility label; nothing interactive is under 44 pt.
-      Screens: Home, Call, Receive, Memory, Add custom sign.</p>
-  </div>
-</section>
-
-<section id="snapdragon">
-  <div class="wrap">
-    <h2>Running on Snapdragon 8 Elite Gen 5</h2>
-    <p class="sub">The target device isn't incidental — several choices exist because of it.</p>
-
+    <h2>On device — Snapdragon 8 Elite Gen 5</h2>
     <div class="grid g2">
       <div class="card">
-        <h3>A 3B model fits comfortably</h3>
-        <p>Q4_K_M at ~2.0 GB sits well inside the iQOO 15's RAM, which is why the app bundles a 3B
-          rather than the 1.5B originally planned. llama.cpp runs it on ARM NEON/dotprod kernels
-          with GPU layer offload.</p>
+        <h3>Model size</h3>
+        <p>Q4_K_M at ~2.0 GB fits comfortably in the iQOO 15's RAM, so the demo bundles a 3B rather
+          than the 1.5B originally planned. llama.cpp runs it on ARM NEON/dotprod kernels with GPU
+          layer offload.</p>
       </div>
       <div class="card">
-        <h3>ADPF performance hints</h3>
+        <h3>ADPF hints</h3>
         <p>The memory layer opens a <code>PerformanceHintManager</code> session per lookup thread,
-          declaring a ~2 ms target and reporting actual duration. On a big.LITTLE flagship a
-          microsecond-scale burst otherwise finishes on an efficiency core <em>before</em> a
-          reactive governor notices it should have ramped.</p>
+          declaring a ~2 ms target. On a big.LITTLE part a microsecond-scale burst otherwise
+          finishes on an efficiency core <em>before</em> a reactive governor reacts.</p>
       </div>
       <div class="card">
-        <h3>Core-aware threading</h3>
+        <h3>Thread placement</h3>
         <p>The write-behind thread runs at <code>THREAD_PRIORITY_BACKGROUND</code> so SQLite never
-          competes with the camera pipeline for prime cores. Room opens in WAL with
+          contends with the camera pipeline for prime cores. Room opens WAL with
           <code>synchronous = NORMAL</code> on its own executor.</p>
       </div>
       <div class="card">
-        <h3>Thermals are the real budget</h3>
-        <p>Continuous camera plus continuous LLM is what heats a phone. The architecture minimises
-          <em>how often</em> the LLM runs at all — which is exactly what the memory layer is for. A
-          repeated phrase costs a hash lookup, not a 3B forward pass.</p>
+        <h3>Thermals set the budget</h3>
+        <p>Continuous camera plus continuous LLM is what heats the phone, so the design optimises
+          for <em>fewer</em> LLM invocations rather than faster ones — which is what both memory
+          stores are for.</p>
       </div>
     </div>
-
     <div class="note warn">
-      <p><strong>Two honest caveats.</strong> The LLM runs on CPU/GPU, <em>not</em> the Hexagon NPU
-        — llama.cpp has no QNN backend in this configuration, and we'd rather say so than imply an
-        acceleration path we didn't take. And OriginOS "performance mode" toggles are not
-        app-accessible APIs; ADPF is the supported route to the same scheduler, and the code doesn't
-        pretend otherwise.</p>
+      <p>Two things worth stating plainly: the LLM runs on CPU/GPU, <strong>not</strong> the
+        Hexagon NPU — llama.cpp has no QNN backend in this configuration. And OriginOS
+        performance-mode toggles aren't app-accessible APIs; ADPF is the supported route to the
+        same scheduler.</p>
     </div>
-  </div>
-</section>
-
-<section id="privacy">
-  <div class="wrap">
-    <h2>Privacy</h2>
-    <ul>
-      <li>No cloud inference. No API keys. No accounts. No analytics.</li>
-      <li>Prescriptions, addresses and emergency details never leave the phone.</li>
-      <li>The memory layer has no network code, no permissions and no exported components, and
-        never logs translation text.</li>
-      <li>Custom signs and remembered sentences live in app-private storage; "clear all" actually
-        clears.</li>
-      <li>The only network traffic possible is a LAN socket to a second phone you pair yourself.</li>
-    </ul>
-    <p>The demo runs in airplane mode. That isn't a stunt — it's the architecture.</p>
-  </div>
-</section>
-
-<section id="repo">
-  <div class="wrap">
-    <h2>Repository</h2>
-    <div class="tw">
-      <table>
-        <thead><tr><th>Path</th><th>What it is</th><th>State</th></tr></thead>
-        <tbody>
-          <tr><td><code>app/</code></td><td>The React Native app — camera, recognition, LLM, memory, relay, five screens</td><td><span class="pill ok">working</span></td></tr>
-          <tr><td><code>app/src/recognition/</code></td><td>Landmarks → 72 features → template match; capture gate; user gesture store</td><td><span class="pill ok">tested</span></td></tr>
-          <tr><td><code>app/src/llm/</code></td><td>Provider interface, llama.rn provider, prompts, sentence memory</td><td><span class="pill ok">working</span></td></tr>
-          <tr><td><code>app/src/relay/</code></td><td>zeroconf discovery + TCP sender/receiver</td><td><span class="pill ok">working</span></td></tr>
-          <tr><td><code>memory-layer/</code></td><td>Kotlin/Android translation memory (Room + ADPF)</td><td><span class="pill ok">23 tests</span></td></tr>
-          <tr><td><code>memory-layer-rn/</code></td><td>TypeScript port, zero runtime dependencies</td><td><span class="pill ok">23 tests</span></td></tr>
-          <tr><td><code>sign-embeddings/</code></td><td>TFLite-embedding path for custom signs, cosine similarity</td><td><span class="pill part">not wired in</span></td></tr>
-          <tr><td><code>llm-testbed/</code></td><td>Standalone app to benchmark on-device GGUFs</td><td><span class="pill no">tooling</span></td></tr>
-        </tbody>
-      </table>
-    </div>
-
-<pre><code># the app
-cd app &amp;&amp; npm install &amp;&amp; npm run android
-
-# memory layer — no Android SDK needed for the engine
-cd memory-layer &amp;&amp; ./gradlew :core:test
-cd memory-layer-rn &amp;&amp; npm install &amp;&amp; npm test</code></pre>
-    <p>Every test suite runs on a laptop in seconds — no emulator, no device, no network.</p>
   </div>
 </section>
 
 <section id="status">
   <div class="wrap">
-    <h2>Honest status</h2>
-    <p class="sub">What a judge should be able to check, and what we're not claiming.</p>
+    <h2>Status and limitations</h2>
+    <p class="sub">Completed at the end of the hackathon. Demo-quality, and specific about which
+      parts are which.</p>
     <div class="tw">
       <table>
         <thead><tr><th>Area</th><th>State</th><th>Detail</th></tr></thead>
         <tbody>
-          <tr><td>Live hand tracking &amp; sign matching</td><td><span class="pill ok">working</span></td><td>Real camera, real MediaPipe plugin, on-device matching</td></tr>
-          <tr><td>Teaching a new sign at runtime</td><td><span class="pill ok">working</span></td><td>Hold ~1 s, quality-gated, persisted, live across screens</td></tr>
-          <tr><td>On-device sentence generation</td><td><span class="pill ok">working</span></td><td>Qwen2.5-3B bundled for release</td></tr>
-          <tr><td>Memory (both ports)</td><td><span class="pill ok">working</span></td><td>Measured flat-scaling lookups; 46 tests</td></tr>
-          <tr><td>LAN relay + transcription + TTS</td><td><span class="pill ok">working</span></td><td>Real connection state, mic pauses while speaking</td></tr>
-          <tr><td>Acoustic coupling into a carrier call</td><td><span class="pill part">caveat</span></td><td>Depends on the handset's echo cancellation</td></tr>
-          <tr><td>Vocabulary size</td><td><span class="pill part">by design</span></td><td>5 bundled templates; grows by user recording, not retraining</td></tr>
-          <tr><td>Embedding-based custom signs</td><td><span class="pill part">built, unused</span></td><td>Module tested; the app needs no trained model today</td></tr>
+          <tr><td>Hand tracking, template matching, runtime sign capture</td><td><span class="pill ok">working</span></td><td>Real camera, native MediaPipe plugin, on-device matching</td></tr>
+          <tr><td>Candidate generation (Qwen2.5-3B)</td><td><span class="pill ok">working</span></td><td>Bundled for the release build</td></tr>
+          <tr><td>Translation memory, both ports</td><td><span class="pill ok">working</span></td><td>46 tests; flat-scaling lookups measured</td></tr>
+          <tr><td>Sentence memory</td><td><span class="pill ok">working</span></td><td>Remembers which candidate was picked, per sequence</td></tr>
+          <tr><td>LAN relay, transcription, TTS</td><td><span class="pill ok">working</span></td><td>Real connection state; mic pauses while speaking</td></tr>
+          <tr><td>Acoustic coupling into a carrier call</td><td><span class="pill part">caveat</span></td><td>Subject to handset echo cancellation</td></tr>
+          <tr><td>Vocabulary</td><td><span class="pill part">by design</span></td><td>5 bundled static single-hand poses + user recordings</td></tr>
+          <tr><td>Two-handed / motion signs</td><td><span class="pill no">not implemented</span></td><td>Next on the list</td></tr>
+          <tr><td>Embedding-based custom signs</td><td><span class="pill part">built, unused</span></td><td>Module tested; template matching suffices today</td></tr>
           <tr><td>Cloud telephony</td><td><span class="pill no">non-goal</span></td><td>Deliberately not built</td></tr>
-          <tr><td>Two-handed / motion signs</td><td><span class="pill no">not built</span></td><td>Next on the roadmap</td></tr>
         </tbody>
       </table>
     </div>
+
+    <h3>Known limitations</h3>
+    <ul>
+      <li>Static single-hand poses only; recognition quality depends on lighting and framing.</li>
+      <li>The capture gate is tuned by hand rather than from data.</li>
+      <li>The relay assumes both phones share a network.</li>
+      <li>All timing figures here are engineering benchmarks on a CI container or the demo device —
+        none of the ergonomics have been evaluated with signers yet.</li>
+    </ul>
+
+    <h3>Next, in order</h3>
+    <ol>
+      <li>Ergonomic evaluation of the hold-and-confirm loop with signers.</li>
+      <li>Motion and two-handed signs.</li>
+      <li>Measured per-sign accuracy on the bundled set.</li>
+      <li>Wiring <code>sign-embeddings</code> if template matching saturates.</li>
+    </ol>
   </div>
 </section>
 
-<section id="hackathon">
+<section id="build">
   <div class="wrap">
-    <h2>Where this was built</h2>
-    <p><strong>iQOO City Battles — Chennai.</strong> Built and demoed on an iQOO 15
-      (Snapdragon 8 Elite Gen 5), fully offline, with the phone in airplane mode for the privacy
-      demonstration.</p>
-    <div class="note">
-      <p>The pitch in one line: <strong>an assistive product that gets measurably faster the more
-        one person uses it — because it remembers that person instead of retraining a
-        model.</strong></p>
+    <h2>Repository</h2>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Path</th><th>Contents</th></tr></thead>
+        <tbody>
+          <tr><td><code>app/</code></td><td>React Native app — camera, recognition, LLM, memory, relay, five screens</td></tr>
+          <tr><td><code>app/src/recognition/</code></td><td>Matcher, capture gate, duplicate detection, user gesture store, live-hand hooks</td></tr>
+          <tr><td><code>app/src/llm/</code></td><td>Provider interface, llama.rn provider, prompts, sentence memory</td></tr>
+          <tr><td><code>app/src/relay/</code></td><td>zeroconf discovery, TCP sender/receiver</td></tr>
+          <tr><td><code>memory-layer/</code></td><td>Kotlin/Android translation memory — Room + ADPF, standalone Gradle build</td></tr>
+          <tr><td><code>memory-layer-rn/</code></td><td>TypeScript port, zero runtime dependencies</td></tr>
+          <tr><td><code>sign-embeddings/</code></td><td>TFLite-embedding custom-sign path (built, not wired in)</td></tr>
+          <tr><td><code>llm-testbed/</code></td><td>Standalone app for benchmarking GGUFs on the device</td></tr>
+        </tbody>
+      </table>
     </div>
+
+<pre><code># app
+cd app &amp;&amp; npm install &amp;&amp; npm run android
+
+# engines — no emulator, no device, no network
+cd memory-layer     &amp;&amp; ./gradlew :core:test
+cd memory-layer-rn  &amp;&amp; npm install &amp;&amp; npm test
+cd sign-embeddings  &amp;&amp; npm install &amp;&amp; npm test</code></pre>
+    <p>Full technical detail — algorithms, data structures, failure behaviour, build flow — is in
+      the <a href="https://github.com/xreedev/mudra#readme">README</a>.</p>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
     <div>
-      <strong>MUDRA+</strong> · on-device ASL to speech<br>
-      Built on MediaPipe Tasks, llama.cpp, whisper.cpp, Qwen2.5, React Native, Room/SQLite.
+      <strong>MUDRA+</strong> · prototype, built at iQOO City Battles, Chennai<br>
+      MediaPipe Tasks · llama.cpp · whisper.cpp · Qwen2.5 · React Native · Room/SQLite
     </div>
     <div>
       <a href="https://github.com/xreedev/mudra">github.com/xreedev/mudra</a>
